@@ -1,0 +1,116 @@
+;* some memory addresses and definitions
+
+;//---------------------------------------------------------------------------------------------
+
+.def DOSVEC			= $000A
+.def RTCLOK			= $0012	; Real Time Clock
+
+.def VDSLST			= $0200	; Display List Interrupt Vector
+
+.def VVBLKI			= $0222	; Vertical Blank Immediate (VBI) Register
+.def SDMCTL			= $022F	; Shadow Direct Memory Access Control address
+.def SDLSTL			= $0230
+.def COLOR0			= $02C4
+.def COLOR1			= $02C5
+.def COLOR2			= $02C6
+.def COLOR3			= $02C7
+.def COLOR4			= $02C8
+.def CH1			= $02F2
+.def CH				= $02FC
+
+.def HPOSP0          		= $D000	; HORIZONTAL POSITION P0
+.def HPOSP1          		= $D001	; HORIZONTAL POSITION P1
+.def HPOSP2          		= $D002	; HORIZONTAL POSITION P2
+.def HPOSP3          		= $D003	; HORIZONTAL POSITION P3
+.def HPOSM0          		= $D004	; HORIZONTAL POSITION M0
+.def HPOSM1          		= $D005	; HORIZONTAL POSITION M1
+.def HPOSM2          		= $D006	; HORIZONTAL POSITION M2
+.def HPOSM3          		= $D007	; HORIZONTAL POSITION M3
+.def SIZEP0          		= $D008	; SIZE P0
+.def SIZEP1          		= $D009	; SIZE P0
+.def SIZEP2          		= $D00A	; SIZE P0
+.def SIZEP3          		= $D00B	; SIZE P0
+.def SIZEM           		= $D00C	; SIZE M
+.def GRAFP0          		= $D00D
+.def GRAFP1          		= $D00E
+.def GRAFP2          		= $D00F
+.def GRAFP3          		= $D010
+.def TRIG0			= $D010
+.def GRAFM           		= $D011
+.def COLPM0          		= $D012	; COLOR P0/M0
+.def COLPM1          		= $D013	; COLOR P1/M1
+.def COLPM2          		= $D014	; COLOR P2/M2
+.def NTSCPAL         		= $D014
+.def COLPM3          		= $D015	; COLOR P3/M3
+.def COLPF0         		= $D016
+.def COLPF1          		= $D017
+.def COLPF2          		= $D018
+.def COLPF3          		= $D019
+.def COLBK           		= $D01A
+.def GPRIOR          		= $D01B
+.def GRACTL          		= $D01D
+
+.def POKEY 			= $D200
+.def KBCODE			= $D209
+.def IRQEN          		= $D20E
+.def IRQST          		= $D20E
+.def SKCTL			= $D20F
+.def SKSTAT			= $D20F
+
+.def PORTA			= $D300
+.def PORTB           		= $D301
+
+.def DMACTL          		= $D400
+.def CHACTL          		= $D401
+.def DLISTL          		= $D402
+.def DLISTH          		= $D403
+.def HSCROL          		= $D404
+.def VSCROL          		= $D405
+.def PMBASE          		= $D407	; STARTING ADRESS PLAYER MISSILE GRAPHICS
+.def CHBASE          		= $D409
+.def WSYNC           		= $D40A
+.def VCOUNT          		= $D40B
+.def NMIEN          		= $D40E 
+.def NMIST           		= $D40F
+.def NMIRES			= $D40F
+
+.def NMI             		= $FFFA
+.def RESET           		= $FFFC
+.def IRQ             		= $FFFE
+
+;//---------------------------------------------------------------------------------------------
+
+.MACRO CHECK_NTSCPAL
+		lda		NTSCPAL
+		cmp		#1
+.ENDM
+
+.MACRO SETBKCOL COLVAL
+.ifdef DEBUG_COLOR
+		lda		#:COLVAL 
+		sta		COLBK
+.endif
+.ENDM
+
+.MACRO KIL
+		dta 2
+.ENDM
+
+;//---------------------------------------------------------------------------------------------
+
+.def LMS                 	= 64
+.def HS                  	= 16
+.def MODE4               	= 4
+.def MODED               	= $0D
+.def MODEE               	= $0E
+.def MODEF               	= $0F
+.def BLANK8              	= $70
+.def DLI                 	= 128
+.def DLIJUMP             	= $41	; jump + wait vsync
+.def DL_JUMP             	= $1	; jump 
+.def PFSIZE_DISABLED		= 0
+.def PFSIZE_NARROW		= 1
+.def PFSIZE_NORMAL		= 2
+.def PFSIZE_WIDE		= 3
+.def GRACTL_PDMA		= 1<<1
+.def GRACTL_MDMA		= 1<<0
