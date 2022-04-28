@@ -17,7 +17,7 @@ SongSpeed	equ 1		; 1 => 50/60hz, 2 => 100/120hz, etc
 
 ; playback speed will be adjusted accordingly in the other region
 
-REGIONPLAYBACK	equ 0		; 0 => PAL, 1 => NTSC
+REGIONPLAYBACK	equ 1		; 0 => PAL, 1 => NTSC
 
 ; currently, Stereo is not supported with the LZSS driver...
 
@@ -1283,6 +1283,7 @@ SetNewSongPtrsFull
 	ldx #0
 	stx SongIdx 	
 	stx is_fadeing_out
+	stx stop_on_fade_end
 SetNewSongPtrsLoopsOnly
 	lda #4
 	sta is_looping 
@@ -1292,24 +1293,42 @@ SetNewSongPtrs
 	SongTotal equ *-1		
 	bcc SetNewSongPtrs_a			; continue, index is in the valid range
 	beq test_boundaries			; if index is equal to total, make sure it was from previously being set!
-	bcs SetNewSongPtrsFull			; else, it overshot, and must wrap around!
+;	bcs SetNewSongPtrsFull			; else, it overshot, and must wrap around!
 test_boundaries 
 	lda is_looping				; is the loop flag set? if it is not, there is a wrap around to do!	
 	cmp #4					; 2 and below -> all good, 4 or above -> pointers are about to be set, bad!
-	bcs SetNewSongPtrsFull
+	bcc SetNewSongPtrs_a
+;	bcs SetNewSongPtrsFull
+test_boundaries_a
+	lda is_fadeing_out			; in case it was fadeing out but also reached the end of index...
+	beq SetNewSongPtrsFull			; if not fadeing out, do not take a chance, wrap around
+	bne SetNewSongPtrs_c			; else, catch whatever remains in that bit of code, it's 8:32 am and I most likely broke even more stuff now
+	
+
 SetNewSongPtrs_a
 	dec is_looping				; must start at 4!
 	lda #4					; is the 'loop' flag set?
 	is_looping equ *-1
-	bmi SetNewSongPtrsFull			;* if this happens, you did something wrong, Vin!
+;	bmi SetNewSongPtrsFull			;* if this happens, you did something wrong, Vin!
+	bmi DontSet				; of course I did something wrong, broke tunes looping before fade finished
 	beq trigger_fade			; loop already set
 	cmp #1
 	beq DontSet				; looping, so no need to update pointers
 	cmp #2
 	beq iliketosingaloopy			; load the loop subtune pointers 
 SetNewSongPtrs_b
-	lda is_fadeing_out
-	bne DontSet				; keep looping until fade finished, it's too early to load a new subtune!
+	lda is_fadeing_out			; if it's too early to load a new subtune! A dummy was most likely detected!
+	beq SetNewSongPtrs_e			; if not fadeing out, carry on
+SetNewSongPtrs_c
+	lda stop_on_fade_end			; is the tune intended to stop?
+	bpl SetNewSongPtrs_d			; if no, override the subtune for the next one, and interrupt the fadeout
+	lda #11					; else, load this number because 12 is nice
+	sta is_fadeing_out			; then set the timer further immediately to end it!
+	bne SetNewSongPtrs_e			; unconditional, since the tune should end anyway, no harm done here
+SetNewSongPtrs_d
+	lda #0
+	sta is_fadeing_out			; interrupt the fadeout, the next tune should then load like normal
+SetNewSongPtrs_e	
 	lda SongsSLOPtrs,x
 	sta LZS.SongStartPtr
 	lda SongsSHIPtrs,x
@@ -1412,29 +1431,6 @@ Print_pointers
 ;-----------------
 
 ;---------------------------------------------------------------------------------------------------------------------------------------------;
-        
-; Display list
-
-dlist       
-	:6 dta $70		; 6 empty lines
-	dta $42,a(line_0)	; ANTIC mode 2, for the first line of infos drawn on the screen 
-	dta $70			; 1 empty line
-	dta $46			; ANTIC mode 6, 4 lines, for the volume bars, or 4 lines of POKEY registers display
-mode6_toggle 
-	dta a(mode_6) 
-	:3 dta $06
-	dta $42,a(mode_2d)	; back to mode 2 with the main player display under the VU meter/POKEY registers
-	:6 dta $02
-	dta $70			; 1 empty line
-	:3 dta $02		; 3 lines of user input text from RMT
-	dta $42			
-txt_toggle
-	dta a(line_4)		; memory address set to line_4 by default, or line_5 when SHIFT is held
-	:3 dta $70		; 3 empty lines
-	dta $42,a(line_6)	; 1 final line of mode 2, must have its own addressing or else the SHIFT toggle affects it 
-	dta $41,a(dlist)	; Jump and wait for vblank, return to dlist
-	
-;-----------------
 
 ; line counter spacing table for instrument speed from 1 to 16
 

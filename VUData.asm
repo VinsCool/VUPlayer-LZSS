@@ -90,5 +90,26 @@ line_5	dta d"Line 5 (SHIFT is being held right now)  "
 
 line_6	dta d"VUPlayer + LZSS by VinsCool         "
 	dta d"v0.2"* 
+	
+; Display list
+
+dlist       
+	:6 dta $70		; 6 empty lines
+	dta $42,a(line_0)	; ANTIC mode 2, for the first line of infos drawn on the screen 
+	dta $70			; 1 empty line
+	dta $46			; ANTIC mode 6, 4 lines, for the volume bars, or 4 lines of POKEY registers display
+mode6_toggle 
+	dta a(mode_6) 
+	:3 dta $06
+	dta $42,a(mode_2d)	; back to mode 2 with the main player display under the VU meter/POKEY registers
+	:6 dta $02
+	dta $70			; 1 empty line
+	:3 dta $02		; 3 lines of user input text from RMT
+	dta $42			
+txt_toggle
+	dta a(line_4)		; memory address set to line_4 by default, or line_5 when SHIFT is held
+	:3 dta $70		; 3 empty lines
+	dta $42,a(line_6)	; 1 final line of mode 2, must have its own addressing or else the SHIFT toggle affects it 
+	dta $41,a(dlist)	; Jump and wait for vblank, return to dlist
 
 ;-----------------
