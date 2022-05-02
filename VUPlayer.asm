@@ -92,7 +92,7 @@ region_done
 
 ;----------------- 
 
-; print instrument speed and region, done once per initialisation
+; print instrument speed and region, and set colours, done once per initialisation
 
 	mwa #line_0 DISPLAY	; initialise the Display List indirect memory address for later
 	ldy #4			; 4 characters buffer 
@@ -108,11 +108,23 @@ region_done
 	region_byte equ *-1
 	cmp #$9B
 	bmi is_NTSC
-is_PAL
+is_PAL				; VUMeter colours, adjusted for PAL 
+	lda #$2A
+	sta COLOR3
+	lda #$BF
+	sta COLOR1
+	lda #$DE
+	sta COLOR0
 	ldx #50
 	mva:rne txt_PAL-1,y line_0-1,y-
 	beq is_DONE
-is_NTSC
+is_NTSC				; VUMeter colours, NTSC colours were originally used
+	lda #$4A
+	sta COLOR3
+	lda #$DF
+	sta COLOR1
+	lda #$1E
+	sta COLOR0
 	ldx #60
 	mva:rne txt_NTSC-1,y line_0-1,y-
 is_DONE				
@@ -129,18 +141,6 @@ ready_to_play
 	jsr set_highlight	; set the first highlighted button selection, PLAY by default 
 
 ;------------------
-
-;* TODO: adjust between PAL and NTSC palettes, also move this code elsewhere
-
-set_colours			; VUMeter colours
-	lda #74
-	sta COLOR3
-	lda #223
-	sta COLOR1
-	lda #30
-	sta COLOR0
-
-;-----------------
 
 ;* TODO: fix this shit too
 
@@ -220,7 +220,7 @@ check_play_flag
 	lda is_playing_flag 		; 0 -> is playing, else it is either stopped or paused, and must not run into rmtplay again 
 	bne loop			; otherwise, the player is either paused or stopped, in this case, nothing will happen until it is changed back to 0
 
-	lda #$80			; lda #$80 to display the rasterbar by default, 0 sets it hidden otherwise 
+	lda #0				; lda #$80 to display the rasterbar by default, 0 sets it hidden otherwise 
 	rasterbar_toggler equ *-1
 	bpl do_play			; a positive value means the rasterbar is not displayed 
 	sty COLBK			; background colour
