@@ -6,6 +6,9 @@
 
 line_0	dta d"                                        "
 
+;* debug display
+;line_0	dta d"             VCOUNT: 00 SCANLINES: 00   "
+
 ; volume bars, mode 6, 4 lines
 
 mode_6	dta d"                    "
@@ -28,7 +31,8 @@ mode_2d dta $43,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,
 ; timer, order, row, etc display
 
 line_0a	dta $44 
-	dta d" Time: 00:00  Spd: 00 Ord: 00 Row: 00 "
+;	dta d" Time: 00:00  Spd: 00 Ord: 00 Row: 00 "
+	dta d" Time: 00:00 S: 00/00 Ord: 00 Row: 00 "
 	dta $44
 
 ; top border
@@ -89,7 +93,7 @@ line_5	dta d"Line 5 (SHIFT is being held right now)  "
 ; version and credit
 
 line_6	dta d"VUPlayer + LZSS by VinsCool         "
-	dta d"v0.2"* 
+	dta d"v0.3"* 
 	
 ; Display list
 

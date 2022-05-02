@@ -1,5 +1,5 @@
 ;************************************************;
-;* VUPlayer, Version v0.2 WIP                   *;
+;* VUPlayer, Version v0.3 WIP                   *;
 ;* by VinsCool, 2022                            *;
 ;* This project branched from Simple RMT Player *;
 ;* And has then become its own thing...         *;
@@ -42,6 +42,7 @@ SPEED		equ 1		; set the speed of decay rate, 0 is no decay, 255 is the highest a
 ;---------------------------------------------------------------------------------------------------------------------------------------------;
 	
 ; now assemble VUPlayer here... 
+;* TODO: fix a lot of this shit
 
 start       
 	ldx #0			; disable playfield and the black colour value
@@ -51,162 +52,60 @@ start
 	stx COLOR2		; Shadow COLPF2 (playfield colour 2), black
 	mwa #dlist SDLSTL	; Start Address of the Display List
 	mva #>FONT CHBASE     	; load the font address into the character register, I'm not sure why at the moment but it seems like I must reload it every frame during the initialisation...
-;	mwa #line_0 DISPLAY	; initialise the Display List indirect memory address for later
-
-;-----------------
-	
-set_colours			; VUMeter colours -- TODO: adjust between PAL and NTSC palettes
-	lda #74
-	sta COLOR3
-	lda #223
-	sta COLOR1
-	lda #30
-	sta COLOR0
 
 ;-----------------
 
 ;* TODO: fix this shit
-	
-initialise_player
-	jsr stop_pause_reset	; clear the POKEY registers first
-	jsr SetNewSongPtrsFull	; initialise the LZSS driver with the song pointer using default values always
-	ldy #SongSpeed		; hardcoded to 1 for the moment
-adjust_check
-	beq adjust_check_a	; Y is 0 if equal, this is invalid!
-	bpl adjust_check_b	; Y = 1 to 127, however, 16 is the maximum supported
-adjust_check_a
-	ldy #1			; if Y is 0, nagative, or above 16, this will be bypassed!
-adjust_check_b
-	cpy #17			; Y = 17?
-	bcs adjust_check_a	; everything equal or above 17 is invalid! 
-adjust_check_c
-	sty instrspeed		; print later ;)
-	cpy #5
-	bcc do_speed_init	; all values between 1 to 4 don't need adjustments
-	beq adjust_5vbi
-	cpy #7
-	beq adjust_7vbi
-	cpy #8
-	beq adjust_8vbi
-	cpy #9
-	beq adjust_9vbi
-	cpy #10
-	beq adjust_10vbi	
-	cpy #11
-	beq adjust_7vbi
-	cpy #14
-	beq adjust_7vbi
-	cpy #15
-	beq adjust_10vbi 
-adjust_9vbi			; 16 is the maximal number supported, and uses the 9xVBI fix
-	lda #153		; fixes 9xVBI, 16xVBI
-	bne do_vbi_fix
-adjust_5vbi
-	lda #155		; fixes 5xVBI
-	bne do_vbi_fix
-adjust_7vbi
-	lda #154		; fixes 7xVBI, 11xVBI, 14xVBI
-	bne do_vbi_fix
-adjust_8vbi
-	lda #152		; fixes 8xVBI
-	bne do_vbi_fix
-adjust_10vbi
-	lda #150		; fixes 10xVBI, 15xVBI
-do_vbi_fix
-	sta onefiftysix
-	
-;-----------------
-	
-do_speed_init
-	lda tabpp-1,y		; load from the line counter spacing table
-	sta acpapx2		; lines between each play
-	sta backup_speed	; will be used to reset the speed in FF/RW mode
-current_speed equ *-1
-	lda SKSTAT		; Serial Port Status
-	and #$08		; SHIFT key being held?
-	beq no_dma		; yes, skip the next 2 instructions
-	ldx #$22		; DMA enable, normal playfield
-	stx SDMCTL		; write to Shadow Direct Memory Access Control address
-no_dma
-	ldx #100		; load into index x a 100 frames buffer
-wait_init   
-	jsr wait_vblank		; wait for vblank => 1 frame
-	mva #>FONT CHBASE	
-	dex			; decrement index x
-	bne wait_init		; repeat until x = 0, total wait time is ~2 seconds
-region_init			; 50 Hz or 60 Hz?
-	stx VCOUNT		; x = 0, use it here
-	ldx #156		; default value for all regions
-onefiftysix equ *-1		; adjustments
+;* TODO: optimise timing space so NTSC time actually "divides" evenly... it's trying to fit calculations for 312 lines!
+;* that means multispeed songs are not quite "right" in NTSC, because the interval is not actually constant between plays!
+
 region_loop	
 	lda VCOUNT
 	beq check_region	; vcount = 0, go to check_region and compare values
-	tay			; backup the value in index y
+	tax			; backup the value in index y
 	bne region_loop 	; repeat
-	
-;-----------------
-	
 check_region
-	cpy #$9B		; compare index y to 155
+	stx region_byte		; will define the region text to print later
+	ldy #SongSpeed		; defined speed value, which may be overwritten by RMT as well
+	sty instrspeed		; will be re-used later as well for the xVBI speed value printed
 	IFT REGIONPLAYBACK==0	; if the player region defined for PAL...
-	bpl region_done		; negative result means the machine runs at 60hz
-	ldx #130		; NTSC is detected, adjust the speed from PAL to NTSC
+	lda tabppPAL-1,y
+	sta acpapx2		; lines between each play
+	cpx #$9B		; compare X to 155
+	bmi set_ntsc		; negative result means the machine runs at 60hz		
+	lda tabppPALfix-1,y
+	bne region_done 
+set_ntsc
+	lda tabppNTSCfix-1,y	; if NTSC is detected, adjust the speed from PAL to NTSC
 	ELI REGIONPLAYBACK==1	; else, if the player region defined for NTSC...
-	bmi region_done		; positive result means the machine runs at 50hz
-	ldx #186		; PAL is detected, adjust the speed from NTSC to PAL
-	lda instrspeed		; Note that this timing hack is poorly executed, and unfinished, this code will be rewritten in a future VUPlayer revision...
-	cmp #1
-	beq subonetotiming	; 1xVBI is stable if 1 is subtracted from the value, 186 must be used!
-	cmp #2
-	beq subfourtotiming	; 2xVBI is stable if 4 is subtracted from the value, 185 must be used!
-	cmp #3
-	beq region_done		; 3xVBI is stable without a subtraction
-	cmp #4
-	beq subtwototiming	; 4xVBI is stable if 2 is subtracted from the value, 185 must be used!
-subfourtotiming
-;	ldx #185
-	dec acpapx2		; stabilise NTSC timing in PAL mode
-subthreetotiming
-	dec acpapx2		; stabilise NTSC timing in PAL mode
-subtwototiming
-	ldx #185
-	dec acpapx2		; stabilise NTSC timing in PAL mode	
-subonetotiming
-	dec acpapx2		; stabilise NTSC timing in PAL mode
-	EIF			; endif
-
-;-----------------
-	
+	lda tabppNTSC-1,y
+	sta acpapx2		; lines between each play
+	cpx #$9B		; compare X to 155	
+	bpl set_pal		; positive result means the machine runs at 50hz 
+	lda tabppNTSCfix-1,y
+	bne region_done 
+set_pal
+	lda tabppPALfix-1,y	; if PAL is detected, adjust the speed from NTSC to PAL
+	EIF			; endif 
 region_done
-	sty region_byte		; set region flag to print later
-	stx ppap		; value used for screen synchronisation
-	sei			; Set Interrupt Disable Status
-	mwa VVBLKI oldvbi       ; vbi address backup
-	mwa #vbi VVBLKI		; write our own vbi address to it	
-	mva #$40 NMIEN		; enable vbi interrupts
-	mva #>FONT CHBASE
-	
-;-----------------
+	sta ppap		; stability fix for screen synchronisation		
 
-; print instrument speed, done once per initialisation
+;----------------- 
+
+; print instrument speed and region, done once per initialisation
 
 	mwa #line_0 DISPLAY	; initialise the Display List indirect memory address for later
 	ldy #4			; 4 characters buffer 
 	lda #0
-instrspeed 	equ *-1
+	instrspeed equ *-1
 	jsr printhex_direct
 	lda #0
 	dey			; Y = 4 here, no need to reload it
 	sta (DISPLAY),y 
-	mva:rne txt_VBI-1,y line_0+5,y-
-	
-;-----------------
-	
-; print region, done once per initialisation
-
+	mva:rne txt_VBI-1,y line_0+5,y- 
 	ldy #4			; 4 characters buffer 
 	lda #0
-region_byte	equ *-1
+	region_byte equ *-1
 	cmp #$9B
 	bmi is_NTSC
 is_PAL
@@ -224,10 +123,47 @@ is_DONE
 ready_to_play
 	ldy #7			; enough characters buffer, used to set the PLAY status display 
 	mva:rne txt_PLAY-1,y line_0e1-1,y- 
+	jsr stop_pause_reset	; clear the POKEY registers first
+	jsr SetNewSongPtrsFull	; initialise the LZSS driver with the song pointer using default values always 
 	jsr set_subtune_count	; update the subtunes position and total values
 	jsr set_highlight	; set the first highlighted button selection, PLAY by default 
 
 ;------------------
+
+;* TODO: adjust between PAL and NTSC palettes, also move this code elsewhere
+
+set_colours			; VUMeter colours
+	lda #74
+	sta COLOR3
+	lda #223
+	sta COLOR1
+	lda #30
+	sta COLOR0
+
+;-----------------
+
+;* TODO: fix this shit too
+
+	lda SKSTAT		; Serial Port Status
+	and #$08		; SHIFT key being held?
+	beq no_dma		; yes, skip the next 2 instructions
+	ldx #$22		; DMA enable, normal playfield
+	stx SDMCTL		; write to Shadow Direct Memory Access Control address
+no_dma
+	ldx #100		; load into index x a 100 frames buffer
+wait_init   
+	jsr wait_vblank		; wait for vblank => 1 frame
+	mva #>FONT CHBASE	
+	dex			; decrement index x
+	bne wait_init		; repeat until x = 0, total wait time is ~2 seconds
+init_done
+	sei			; Set Interrupt Disable Status
+	mwa VVBLKI oldvbi       ; vbi address backup
+	mwa #vbi VVBLKI		; write our own vbi address to it	
+	mva #$40 NMIEN		; enable vbi interrupts
+	mva #>FONT CHBASE
+	
+;-----------------
 	
 wait_sync
 	lda VCOUNT		; current scanline 
@@ -270,6 +206,15 @@ acpapx2	equ *-1
 	scs:inx
 	stx cku
 	sty WSYNC			; horizontal sync for timing purpose
+
+;* debug code
+
+/*	
+	lda VCOUNT 
+	sta VCOUNTER 
+*/
+
+;* end of debug code
 	
 check_play_flag	
 	lda is_playing_flag 		; 0 -> is playing, else it is either stopped or paused, and must not run into rmtplay again 
@@ -297,8 +242,21 @@ finish_loop_code
 	sta LZS.Initialized		; reset the state of the LZSS driver to not initialised so it can play the next tune or loop	
 	
 finish_loop_code_a	
+	sta WSYNC			; horizontal sync
+
+;* debug code
+
+/*
+	lda VCOUNT
+	sec
+	sbc VCOUNTER
+	asl @
+	sta VSCANLINES
+*/
+
+;* end of debug code
+	
 	ldy #0				; black colour value
-	sty WSYNC			; horizontal sync
 	sty COLBK			; background colour
 	sty COLPF2			; playfield colour 2 
 	jmp loop			; infinitely
@@ -311,6 +269,17 @@ finish_loop_code_a
 
 vbi
 	sta WSYNC		; horizontal sync, so we're always on the exact same spot
+
+;* debug code
+
+/*
+	ldy #56			; debug colour 
+	sty COLBK		; background colour
+	sty COLPF2		; playfield colour 2
+*/
+
+;* end of debug code	
+	
 	ldy KBCODE		; Keyboard Code  
 	ldx <line_4		; line 4 of text
 	lda SKSTAT		; Serial Port Status
@@ -417,11 +386,23 @@ print_speed
 	lda acpapx2
 	cmp #0
 	old_speed 	equ *-1
-	beq print_order
+	beq print_speed2
 	sta old_speed
-	ldy #20
-	eor #$FF			; invert the value so it looks like faster == higher value
+	ldy #17
+;	eor #$FF			; invert the value so it looks like faster == higher value
 	jsr printhex_direct 
+	
+
+print_speed2
+	lda ppap
+	cmp #0
+	old_speed2 	equ *-1
+	beq print_order
+	sta old_speed2
+	ldy #20
+;	eor #$FF			; invert the value so it looks like faster == higher value
+	jsr printhex_direct
+
 
 print_order	
 	lda ZPLZS.SongPtr+1
@@ -455,6 +436,26 @@ no_loop
 	sta (DISPLAY),y 
 	
 ;-----------------
+
+;* debug code
+
+/*
+	mwa #line_0 DISPLAY	; move the display pointer to the correct position first
+	
+	lda #0
+	VCOUNTER equ *-1
+	jsr hex2dec_convert	; convert it to decimal 
+	ldy #21
+	jsr printhex_direct
+
+	lda #0
+	VSCANLINES equ *-1
+	jsr hex2dec_convert	; convert it to decimal 
+	ldy #35
+	jsr printhex_direct
+*/
+
+;* end of debug code 
 
 	jsr print_pointers	; update the pointers displayed on screen (terrible code but I want to make a proper loop for it...) 
 	lda vumeter_toggle
@@ -707,12 +708,24 @@ decay_done
 ;-----------------
 
 return_from_vbi
+
+	sta WSYNC		; horizontal sync, this seems to make the timing more stable
+
+;* debug code
+
+/*
+	ldy #0			; clear debug colour (#56) 
+	sty COLBK		; background colour
+	sty COLPF2		; playfield colour 2
+*/
+
+;* end of debug code
+
 	pla			; since we're in our own vbi routine, pulling all values manually is required
 	tay
 	pla
 	tax
 	pla
-	sta WSYNC		; horizontal sync, this seems to make the timing more stable
 	rti			; return from interrupt
 
 ;-----------------
@@ -867,12 +880,14 @@ stop_toggle_a
 ;* TODO: make this a proper subroutine
 
 play_pause_toggle 
-	lda #156
-backup_speed equ *-1
-	cmp acpapx2
-	beq play_pause_toggle_a
-	sta acpapx2
-	bne set_play			; return to normal speed and continue playing
+
+;	lda #156
+;backup_speed equ *-1
+;	cmp acpapx2
+;	beq play_pause_toggle_a
+;	sta acpapx2
+;	bne set_play			; return to normal speed and continue playing
+	
 play_pause_toggle_a
 	lda #0
 	is_playing_flag equ *-1 
@@ -1053,9 +1068,9 @@ k_index	bne *
 	bcc b_3				; Y = 24 -> '4' key
 	rts:nop
 	bcc b_1				; Y = 26 -> '3' key
-	rts:nop
+	bcc do_ppap_forward		; Y = 27 -> '6' key
 	bcc b_6				; Y = 28 -> 'Escape' key
-	rts:nop
+	bcc do_ppap_reverse		; Y = 29 -> '5' key
 	bcc b_4				; Y = 30 -> '2' key
 	bcc b_0				; Y = 31 -> '1' key
 	rts:nop
@@ -1077,9 +1092,9 @@ k_index	bne *
 	rts:nop
 	rts:nop
 	rts:nop
+	bcc do_lastpap_reverse		; Y = 51 -> '7' key
 	rts:nop
-	rts:nop
-	rts:nop
+	bcc do_lastpap_forward		; Y = 53 -> '8' key
 	rts:nop
 	rts:nop
 	bcc do_trigger_fade_immediate	; Y = 56 -> 'F' key
@@ -1103,6 +1118,16 @@ do_key_left
 do_key_right
 	jmp inc_index_selection 	; increment the index by 1 
 
+do_ppap_reverse	
+	jmp fast_reverse2 		; decrement speed value 2 (ppap) 
+do_ppap_forward
+	jmp fast_forward2		; increment speed value 2 (ppap) 
+	
+do_lastpap_reverse
+	jmp fast_reverse3		; decrement speed value 3 (lastpap) 
+do_lastpap_forward
+	jmp fast_forward3		; increment speed value 3 (lastpap) 
+
 ;----------------- 
 
 ; index_selection 
@@ -1124,7 +1149,7 @@ done_index_selection
 	
 ;-----------------
 
-; songline_seek, must be rewritten
+; timing modifyer inputs, only useful for debugging 
 
 fast_reverse
 	inc acpapx2
@@ -1132,6 +1157,20 @@ fast_reverse
 fast_forward
 	dec acpapx2
 	rts 
+	
+fast_reverse2
+	inc ppap
+	rts
+fast_forward2
+	dec ppap
+	rts 
+	
+fast_reverse3
+	inc lastpap
+	rts
+fast_forward3	
+	dec lastpap
+	rts
 	
 ;-----------------	
 
@@ -1432,10 +1471,41 @@ Print_pointers
 
 ;---------------------------------------------------------------------------------------------------------------------------------------------;
 
-; line counter spacing table for instrument speed from 1 to 16
+;* line counter spacing table for instrument speed from 1 to 16
 
-tabpp       
-	dta 156,78,52,39,31,26,22,19,17,15,14,13,12,11,10,9 
+;-----------------
+
+;* the idea here is to pick the best sweet spots each VBI multiples to form 1 "optimal" table, for each region
+;* it seems like the number of lines for the 'fix' value MUST be higher than either 156 for better stability
+;* else, it will 'roll' at random, which is not good! better sacrifice a few lines to keep it stable...
+;* strangely enough, NTSC does NOT suffer from this weird rolling effect... So that one can use values above or below 131 fine
+
+;	    x1  x2  x3  x4  x5  x6  x7  x8  x9  x10 x11 x12 x13 x14 x15 x16 
+
+tabppPAL	; "optimal" PAL timing table
+	dta $9C,$4E,$34,$27,$20,$1A,$17,$14,$12,$10,$0F,$0D,$0C,$0C,$0B,$0A
+	
+tabppPALfix	; interval offsets for timing stability 
+	dta $9C,$9C,$9C,$9C,$A0,$9C,$A1,$A0,$A2,$A0,$A5,$9C,$9C,$A8,$A5,$A0
+	
+;-----------------
+	
+;* NTSC needs its own adjustment table too... And so will cross-region from both side... Yay numbers! 
+;* adjustments between regions get a lot trickier however...
+;* for example: 
+;* 1xVBI NTSC to PAL, 130 on 156 does work for a stable rate, but it would get all over the place for another number 
+
+;	    x1  x2  x3  x4  x5  x6  x7  x8  x9  x10 x11 x12 x13 x14 x15 x16 
+	
+tabppNTSC	; "optimal" NTSC timing table
+	dta $82,$41,$2B,$20,$1A,$15,$12,$10,$0E,$0D,$0B,$0A,$0A,$09,$08,$08
+
+tabppNTSCfix	; interval offsets for timing stability 
+	dta $82,$82,$81,$80,$82,$7E,$7E,$80,$7E,$82,$79,$78,$82,$7E,$78,$80
+
+;-----------------
+
+;* TODO: add cross region tables fix, might be a pain in the ass, blegh...
 
 ;-----------------
 
