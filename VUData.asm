@@ -9,12 +9,12 @@ line_0	dta d"                                        "
 ;* debug display
 ;line_0	dta d"             VCOUNT: 00 SCANLINES: 00   "
 
-; volume bars, mode 6, 4 lines
+; volume bars, mode 6, 4 lines, this is also the default screen used when the program is loaded, which will be overwritten
 
-mode_6	dta d"                    "
-mode_6a	dta d"                    "
-mode_6b	dta d"                    "
-mode_6c	dta d"                    "
+mode_6	dta d"     WELCOME TO     "
+mode_6a	dta d"   VUPLAYER V0.3!   "
+mode_6b	dta d"  DURING PLAYBACK,  "
+mode_6c	dta d"  PRESS h FOR HELP  "
 
 ; POKEY registers, mode 6, 4 lines
 
@@ -31,7 +31,6 @@ mode_2d dta $43,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,
 ; timer, order, row, etc display
 
 line_0a	dta $44 
-;	dta d" Time: 00:00  Spd: 00 Ord: 00 Row: 00 "
 	dta d" Time: 00:00 S: 00/00 Ord: 00 Row: 00 "
 	dta $44
 
@@ -77,7 +76,25 @@ b_stop	dta $7B,$00 			; 5, Stop
 b_eject	dta $56,$00 			; 6, Eject, will act as a fancy "Exit" button for now... 
 	dta $44
 
-; bottomest border
+; the help and credits screen, 5 lines of mode 2, 40 characters per line
+
+help_0	dta $44 
+	dta d"                                      "
+	dta $44
+help_1	dta $44 
+	dta d"                                      "
+	dta $44
+help_2	dta $44 
+	dta d"                                      "
+	dta $44
+help_3	dta $44 
+	dta d"                                      "
+	dta $44
+help_4	dta $44 
+	dta d"                                      "
+	dta $44
+
+; bottomest border, this is the last line of the player interface displayer, anything else is optional
 
 line_0f dta $42,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45
 	dta $45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$40
@@ -98,22 +115,52 @@ line_6	dta d"VUPlayer + LZSS by VinsCool         "
 ; Display list
 
 dlist       
-	:6 dta $70		; 6 empty lines
-	dta $42,a(line_0)	; ANTIC mode 2, for the first line of infos drawn on the screen 
+	:6 dta $70		; start with 6 empty lines
+;	dta $42			; ANTIC mode 2, for the first line of infos drawn on the screen
+	dta $C2
+	dta a(line_0)		 
 	dta $70			; 1 empty line
-	dta $46			; ANTIC mode 6, 4 lines, for the volume bars, or 4 lines of POKEY registers display
+;	dta $F0
+	
+	dta $66			; ANTIC mode 6, 4 lines, for the volume bars, or 4 lines of POKEY registers display
+;	dta $E6
 mode6_toggle 
-	dta a(mode_6) 
-	:3 dta $06
-	dta $42,a(mode_2d)	; back to mode 2 with the main player display under the VU meter/POKEY registers
-	:6 dta $02
-	dta $70			; 1 empty line
-	:3 dta $02		; 3 lines of user input text from RMT
-	dta $42			
+	dta a(mode_6-20) 	; 20 bytes offset for proper display, the VSCROL register will take care of the position
+	:3 dta $26		; 3 more lines of mode 6, also with VSCROL flag
+;	:3 dta $A6
+;	:1 dta $06		; 1 final mode 6 line, which sets things back to normal, acting like a 'buffer'
+	:1 dta $86
+
+	dta $42			; ANTIC mode 2, 7 + 5 lines, the main player display, under the VU Meter/POKEY registers
+	dta a(mode_2d)		; top of the player interface, must have its own addressing since the lines below can change	
+	
+mode2_0	dta $42			; ANTIC mode 2, 5 lines, which can be switched on the fly
+
+;	dta $62
+mode2_toggle
+	dta a(line_0a)		; this part will also be used to display the help screen with the 'H' key
+;	dta a(line_0a-40)
+mode2_1	:4 dta $02		; the next 4 lines are all used for the main player interface, or help screen
+
+;	:4 dta $22
+;	dta $02			; buffer
+	
+	dta $42			; ANTIC mode 2, 1 line
+	dta a(line_0f)		; bottom of the player interface, must have its own addressing since the lines above can change
+	
+	dta $70			; finish this part with 1 empty line
+
+	dta $42			; ANTIC mode 2, 3+2 lines, user input text overwritten using RMT's export feature
+	dta a(line_1)
+	:2 dta $02		; the next 2 lines are directly underneath
+
+	dta $42			; ANTIC mode 2, 1+1 line, which can be switched on the fly 
 txt_toggle
-	dta a(line_4)		; memory address set to line_4 by default, or line_5 when SHIFT is held
-	:3 dta $70		; 3 empty lines
-	dta $42,a(line_6)	; 1 final line of mode 2, must have its own addressing or else the SHIFT toggle affects it 
+	dta a(line_4)		; the memory address is set to line_4 by default, or line_5 when SHIFT is held
+	:3 dta $70		; finish with 3 empty lines
+	
+	dta $42			; ANTIC mode 2, 1 line, for the VUPlayer version
+	dta a(line_6)		; 1 final line of mode 2, must have its own addressing or else the SHIFT toggle affects it!
 	dta $41,a(dlist)	; Jump and wait for vblank, return to dlist
 
 ;-----------------

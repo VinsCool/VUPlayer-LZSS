@@ -111,20 +111,26 @@ region_done
 is_PAL				; VUMeter colours, adjusted for PAL 
 	lda #$2A
 	sta COLOR3
+	sta col3bak
 	lda #$BF
 	sta COLOR1
+	sta col1bak
 	lda #$DE
 	sta COLOR0
+	sta col0bak
 	ldx #50
 	mva:rne txt_PAL-1,y line_0-1,y-
 	beq is_DONE
 is_NTSC				; VUMeter colours, NTSC colours were originally used
 	lda #$4A
 	sta COLOR3
+	sta col3bak
 	lda #$DF
 	sta COLOR1
+	sta col1bak
 	lda #$1E
 	sta COLOR0
+	sta col0bak
 	ldx #60
 	mva:rne txt_NTSC-1,y line_0-1,y-
 is_DONE				
@@ -132,9 +138,8 @@ is_DONE
 	sty v_minute	
 	stx framecount		; X is either 50 or 60, defined by the region initialisation
 	stx v_frame		; also initialise the actual frame counter with this value
-ready_to_play
-	ldy #7			; enough characters buffer, used to set the PLAY status display 
-	mva:rne txt_PLAY-1,y line_0e1-1,y- 
+	ldy #6			
+	sty VSCROL		; this will set the initial vertical position for the VU Meter/POKEY registers toggle scroll
 	jsr stop_pause_reset	; clear the POKEY registers first
 	jsr SetNewSongPtrsFull	; initialise the LZSS driver with the song pointer using default values always 
 	jsr set_subtune_count	; update the subtunes position and total values
@@ -150,7 +155,8 @@ ready_to_play
 	ldx #$22		; DMA enable, normal playfield
 	stx SDMCTL		; write to Shadow Direct Memory Access Control address
 no_dma
-	ldx #100		; load into index x a 100 frames buffer
+	sta dma_flag		; will allow skipping drawing the screen if it was not enabled!
+	ldx #120		; load into index x a 120 frames buffer
 wait_init   
 	jsr wait_vblank		; wait for vblank => 1 frame
 	mva #>FONT CHBASE	
@@ -159,9 +165,17 @@ wait_init
 init_done
 	sei			; Set Interrupt Disable Status
 	mwa VVBLKI oldvbi       ; vbi address backup
-	mwa #vbi VVBLKI		; write our own vbi address to it	
-	mva #$40 NMIEN		; enable vbi interrupts
+	mwa #vbi VVBLKI		; write our own vbi address to it 
+	
+	mwa #deli VDSLST
+	
+;	mva #$40 NMIEN		; enable vbi interrupts
+	mva #$C0 NMIEN
 	mva #>FONT CHBASE
+	
+ready_to_play 
+	ldy #7			; long enough characters buffer, used to set the PLAY status display 
+	mva:rne txt_PLAY-1,y line_0e1-1,y- 
 	
 ;-----------------
 	
@@ -209,12 +223,8 @@ acpapx2	equ *-1
 
 ;* debug code
 
-/*	
-	lda VCOUNT 
-	sta VCOUNTER 
-*/
-
-;* end of debug code
+;	lda VCOUNT 
+;	sta VCOUNTER 
 	
 check_play_flag	
 	lda is_playing_flag 		; 0 -> is playing, else it is either stopped or paused, and must not run into rmtplay again 
@@ -246,15 +256,11 @@ finish_loop_code_a
 
 ;* debug code
 
-/*
-	lda VCOUNT
-	sec
-	sbc VCOUNTER
-	asl @
-	sta VSCANLINES
-*/
-
-;* end of debug code
+;	lda VCOUNT
+;	sec
+;	sbc VCOUNTER
+;	asl @
+;	sta VSCANLINES
 	
 	ldy #0				; black colour value
 	sty COLBK			; background colour
@@ -265,21 +271,16 @@ finish_loop_code_a
 
 ;---------------------------------------------------------------------------------------------------------------------------------------------;
 
-;* VBI loop
+;* VBI loop, run through all the code that is needed, then return with a RTI 
 
 vbi
-	sta WSYNC		; horizontal sync, so we're always on the exact same spot
-
-;* debug code
-
-/*
+	sta WSYNC		; horizontal sync, so we're always on the exact same spot, seems to help with timing stability 
 	ldy #56			; debug colour 
 	sty COLBK		; background colour
 	sty COLPF2		; playfield colour 2
-*/
-
-;* end of debug code	
-	
+	lda #$FF		; DMA flag, set to allow skipping drawing the screen if it was not enabled
+	dma_flag equ *-1
+	beq continue_c		; if the value is 0, nothing will be drawn, else, continue with everything below
 	ldy KBCODE		; Keyboard Code  
 	ldx <line_4		; line 4 of text
 	lda SKSTAT		; Serial Port Status
@@ -287,12 +288,10 @@ vbi
 	bne set_line_4		; nope, skip the next ldx
 	ldx <line_5		; line 5 of text (toggled by SHIFT) 
 	tya
-	eor #$40		; invert the SHIFT key flag so it will be ignored later
+	eor #$40		; invert the SHIFT key flag so it will be ignored later-- is this actually necessary? I forgor
 	tay
 set_line_4  
 	stx txt_toggle		; write to change the text on line 4 
-	
-;-----------------
 	
 check_key_pressed 	
 	lda SKSTAT		; Serial Port Status
@@ -307,50 +306,560 @@ check_key_pressed
 continue			; do everything else during VBI after the keyboard checks 
 	ldx #0			; reset the held key flag! 
 continue_a 			; a new held key flag is set when jumped directly here
-	stx held_key_flag
-	
-;-----------------	
-	
+	stx held_key_flag 
 continue_b 			; a key was detected as held when jumped directly here
-	jsr set_subtune_count	; update the subtune count on screen
+	;jsr draw_scanlines	; debug code, could be commented out 
+	jsr test_vumeter_toggle	; process the VU Meter and POKEY registers display routines there	
+	jsr set_subtune_count	; update the subtune count on screen	
+	
+	lda help_toggler
+	bmi continue_c
+	
+	jsr print_player_infos	; print most of the stuff on screen using printhex or printinfo in bulk (TODO: fix this shit) 
+continue_c	
+	jsr calculate_time 	; update the timer, this one is actually necessary, so even with DMA off, it will be executed 
+return_from_vbi			
+	sta WSYNC		; horizontal sync, this seems to make the timing more stable
+	ldy #0			; clear debug colour 
+	sty COLBK		; background colour
+	sty COLPF2		; playfield colour 2
+	pla			;* since we're in our own vbi routine, pulling all values manually is required! 
+	tay
+	pla
+	tax
+	pla
+	rti			; return from interrupt, this ends the VBI time, whenever it actually is "finished" 
 
-calculate_time 
-	lda is_playing_flag 
-	bne notimetolose	; not playing -> no time counter increment  
-	dec v_frame		; decrement the frame counter
-	bne notimetolose	; not 0 -> a second did not yet pass
+;-----------------
+
+;* DLI loop, run through all the code that is needed, then return with a RTI 
+
+deli
+	pha
+	mwa #deli2 VDSLST	; set the next DLI
+	lda #2
+	sta delicounter
+	sta WSYNC
+
+deliloop 
+	sta WSYNC
+	lda col3bak		; Red
+	and #$F0
+	clc
+	adc delicounter
+	sta COLPF3
+	lda col0bak		; Yellow
+	and #$F0
+	clc
+	adc delicounter
+	sta COLPF0
+	lda col1bak		; Green
+	and #$F0
+	clc
+	adc delicounter
+	sta COLPF1
+	inc delicounter
 	lda #0
-framecount equ *-1		; 50 or 60, defined by the region initialisation
-	sta v_frame		; reset the frame counter
-	bne addasecond		; unconditional
-	nop
-v_frame equ *-1			; the NOP instruction is overwritten by the frame counter	
-addasecond
-	sed			; set decimal flag first
+	delicounter equ *-1
+	sta WSYNC
+	cmp #15
+	bne deliloop
+deliloop2
+	sta WSYNC
+	lda col3bak		; Red
+	and #$F0
+	clc
+	adc delicounter
+	sta COLPF3
+	lda col0bak		; Yellow
+	and #$F0
+	clc
+	adc delicounter
+	sta COLPF0
+	lda col1bak		; Green
+	and #$F0
+	clc
+	adc delicounter
+	sta COLPF1
+	dec delicounter
+	sta WSYNC
+	lda delicounter
+	bne deliloop2
+	sta delicounter
+	sta WSYNC
+delivered 	
 	lda #0
-v_second equ *-1
-	clc			; clear the carry flag first, the keyboard code could mess with this part now...
-	adc #1			; carry flag is clear, add 1 directly
-	sta v_second
-	cmp #$60		; 60 seconds, must be a HEX value!
-	bne cleardecimal 	; if not equal, no minute increment
-	ldy #0			; will be used to clear values quicker
-addaminute
+	col0bak equ *-1
+	sta COLPF0
 	lda #0
-v_minute equ *-1
-	adc #0			; carry flag is set above, adding 0 will add 1 instead
-	sta v_minute
-	sty v_second		; reset the second counter
-cleardecimal 
-	cld			; clear decimal flag 
-notimetolose
+	col1bak equ *-1
+	sta COLPF1
+	lda #0
+	col3bak equ *-1
+	sta COLPF3
+	pla
+	rti
+//
+deli2
+	pha
+	mwa #deli VDSLST	; now the adress is reset to the first DLI
+	lda delicounter
+	beq delivered		; most likely finished, so do not overwrite the stack pointer addresses!
+	pla
+	sta delibackup
+	stx delibackup2	
+	pla
+	tax
+	pla
+	pla
+	lda >delivered
+	pha
+	lda <delivered
+	pha
+	txa
+	pha
+	lda #0
+	delibackup equ *-1
+	ldx #0
+	delibackup2 equ *-1
+	rti
+//
+
+;---------------------------------------------------------------------------------------------------------------------------------------------;
+
+;* everything below this point is either stand alone subroutines that can be called at any time, or some misc data such as display list 
+
+; wait for vblank subroutine
+
+wait_vblank 
+	lda RTCLOK+2		; load the real time frame counter to accumulator
+wait        
+	cmp RTCLOK+2		; compare to itself
+	beq wait		; equal means it vblank hasn't began
+	rts
+
+;-----------------
+
+; print text from data tables, useful for many things 
+
+printinfo 
+	sty charbuffer
+	ldy #0
+do_printinfo
+        lda $ffff,x
+infosrc equ *-2
+	sta (DISPLAY),y
+	inx
+	iny 
+	cpy #0
+charbuffer equ *-1
+	bne do_printinfo 
+	rts
+
+;-----------------
+
+; print hex characters for several things, useful for displaying all sort of debugging infos
+	
+printhex
+	ldy #0
+printhex_direct     ; workaround to allow being addressed with y in different subroutines
+	pha
+	:4 lsr @
+	;beq ph1    ; comment out if you want to hide the leftmost zeroes
+	tax
+	lda hexchars,x
+ph1	
+        sta (DISPLAY),y+
+	pla
+	and #$f
+	tax
+	mva hexchars,x (DISPLAY),y
+	rts
+hexchars 
+        dta d"0123456789ABCDEF"
+
+;-----------------
+
+; quick and dirty way to convert a hex value to decimal for display purposes
+; note that the higher the number to convert, the slower this process becomes!
+;* OPTIMISATION: count from 10 instead of 0, which would be a lot faster since 0 to 9 don't need conversion
+
+hex2dec_convert
+	cmp #10			; below 10 -> 0 to 9 inclusive will display like expected, skip the conversion
+	bcc hex2dec_convert_b
+	sec
+	sbc #10			; subtract 10 first, this will save 10 loops of this code!
+	tay
+	lda #$10		; add from 10 (hex) 
+	dey 
+	bmi hex2dec_convert_b	; overflow! set the value directly
+	clc
+	sed
+hex2dec_convert_a
+	adc #1 
+	dey
+	bpl hex2dec_convert_a
+	cld
+hex2dec_convert_b
+	rts
 	
 ;-----------------
 	
+;* VUPlayer specific code, for displaying the current player state
+
+do_stop_toggle
+	jsr stop_toggle
+	ldx #16				; offset by 16 for STOP characters
+	bne play_pause_button_toggle_a	; finish in the play_pause code from here, unconditional 
+
+;-----------------
+
+;* VUPlayer specific code, for displaying the current player state
+
+do_play_pause_toggle
+	jsr play_pause_toggle
+	lda is_playing_flag
+	beq play_pause_button_toggle_a
+play_pause_button_toggle 
+	ldx #8				; offset by 8 for PAUSE characters	
+play_pause_button_toggle_a 
+	ldy #7				; 7 character buffer is enough 
+	mwa #line_0e1 DISPLAY		; move the position to the correct line
+	mwa #txt_PLAY infosrc		; set the pointer for the text data to this location
+	jsr printinfo 			; write the new text in this location 
+	ldx line_0e1			; the play/pause/stop character
+	cpx #$7B			; is it the STOP character?
+	bne play_pause_button_toggle_b	; if not, overwrite the character in the buttons display with either PLAY or PAUSE
+	inx				; else, make sure PLAY is loaded, then write it in memory 
+play_pause_button_toggle_b	
+	stx b_play 			; overwrite the Play/Pause character
+	jsr set_highlight		; refresh the display for the updated graphics, and also to display which player button is highlighted
+	rts 
+
+;-----------------
+
+set_subtune_count
+	lda #0
+SongIdx	equ *-1
+	cmp #$FF
+current_subtune equ *-1
+	beq set_subtune_count_d	; still playing the same subtune, skip this subroutine
+	sta current_subtune	; set the new value in memory	
+set_subtune_count_a
+	jsr reset_timer 	; also reset the timer so new tunes always play from 0:00
+set_subtune_count_b
+	mwa #subtpos DISPLAY	; get the right screen position first
+	lda SongIdx		; index position from LZSSP
+	jsr hex2dec_convert	; convert it to decimal 
+	jsr printhex		; Y may not be 0 after the decimal conversion, do not risk it
+	lda rasterbar_colour
+	clc
+	adc #16
+	sta rasterbar_colour
+set_subtune_count_c
+	lda SongTotal		; index total from LZSSP, this won't change once it was set, except during the initialisation
+	cmp #0
+total_subtune equ *-1
+	beq set_subtune_count_d	; still the same total, nothing else to do here
+	sta total_subtune	; set the new value in memory	
+	jsr hex2dec_convert	; convert it to decimal 
+	ldy #3			; offset to update the other number
+	jsr printhex_direct	; this time Y will position where the character is written
+set_subtune_count_d
+	rts
+	
+;-----------------
+
+; stop and quit
+
+stopmusic 
+	jsr stop_pause_reset 
+	mwa oldvbi VVBLKI	; restore the old vbi address
+	ldx #$00		; disable playfield 
+	stx SDMCTL		; write to Direct Memory Access (DMA) Control register
+	dex			; underflow to #$FF
+	stx CH			; write to the CH register, #$FF means no key pressed
+	cli			; this may be why it seems to crash on hardware... I forgot to clear the interrupt bit!
+	jsr wait_vblank		; wait for vblank before continuing
+	jmp (DOSVEC)		; return to DOS, or Self Test by default
+
+;----------------- 
+
+;* menu input handler subroutine, all jumps will end on a RTS, and return to the 'set held key flag' execution 
+
+do_button_selection   
+	lda #2			; by default, the PLAY/PAUSE button 
+button_selection_flag equ *-1
+	asl @
+	asl @ 
+	sta b_index+1
+b_index	bcc *
+b_0	jmp seek_reverse 	; #0 => seek reverse 
+	nop
+b_1	jmp fast_reverse	; #1 => fast reverse (decrement speed) 
+	nop
+b_2	jmp do_play_pause_toggle	; #2 => play/pause 
+	nop
+b_3	jmp fast_forward 	; #3 => fast forward (increment speed) 
+	nop
+b_4	jmp seek_forward 	; #4 => seek forward 
+	nop
+b_5	jmp do_stop_toggle 	; #5 => stop
+	nop
+b_6	jmp stopmusic 		; #6 => eject 
+	
+;-----------------
+
+;* check all keys that have a purpose here... 
+;* this is the world's most cursed jumptable ever created!
+;* regardless, this finally gets rid of all the spaghetti code I made previously!
+
+check_keys
+	cpy #64				; within the valid range of key input?
+	bcc do_check_keys		; below 64, it's good to go!
+	rts				; else, return immediately from the subroutine
+do_check_keys
+	ldx button_selection_flag	; this will be used for the menu selection below, if the key is matching the input... could be better
+	tya				; transfer to the accumulator to make a quick and dirty jump table
+	asl @				; ASL only once, allowing a 2 bytes index, good enough for branching again immediately and unconditionally, 128 bytes needed sadly...
+	sta k_index+1			; branch will now match the value of Y
+k_index	bne * 
+	bcc do_toggle_loop		; Y = 0 -> L key
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	bcc do_key_left			; Y = 6 -> Atari 'Left' / '+' key
+	bcc do_key_right		; Y = 7 -> Atari 'Right' / '*' key 
+	bcc b_5				; Y = 8 -> 'O' key (not zero!!) 
+	rts:nop
+	bcc b_2				; Y = 10 -> 'P' key
+	rts:nop
+	bcc do_button_selection		; Y = 12 -> 'Enter' key
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	bcc b_3				; Y = 24 -> '4' key
+	rts:nop
+	bcc b_1				; Y = 26 -> '3' key
+	bcc do_ppap_forward		; Y = 27 -> '6' key
+	bcc b_6				; Y = 28 -> 'Escape' key
+	bcc do_ppap_reverse		; Y = 29 -> '5' key
+	bcc b_4				; Y = 30 -> '2' key
+	bcc b_0				; Y = 31 -> '1' key
+	rts:nop
+	bcc do_toggle_rasterbar 	; Y = 33 -> 'Spacebar' key
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	bcc do_toggle_vumeter		; Y = 40 -> 'R' key
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	bcc do_scroll_up		; Y = 46 -> 'W' key
+	rts:nop
+	rts:nop
+	rts:nop
+	rts:nop
+	bcc do_lastpap_reverse		; Y = 51 -> '7' key
+	rts:nop
+	bcc do_lastpap_forward		; Y = 53 -> '8' key
+	rts:nop
+	rts:nop
+	bcc do_trigger_fade_immediate	; Y = 56 -> 'F' key
+	bcc do_toggle_help		; Y = 57 -> 'H' key
+	bcc do_key_right		; Y = 58 -> 'D' key
+	rts:nop
+	rts:nop
+	rts:nop
+	bcc do_scroll_down		; Y = 62 -> 'S' key
+	bcc do_key_left			; Y = 63 -> 'A' key
+do_toggle_loop
+	jmp toggle_loop			; toggle the player 'loop' flag on/off
+do_toggle_rasterbar
+	jmp toggle_rasterbar		; toggle the rasterbar display on/off
+do_toggle_vumeter
+	jmp toggle_vumeter		; toggle the VU Meter display with POKEY registers display
+do_trigger_fade_immediate
+	jmp trigger_fade_immediate	; immediately set the 'fadeout' flag then stop the player once finished
+do_key_left
+	jmp dec_index_selection 	; decrement the index by 1	
+do_key_right
+	jmp inc_index_selection 	; increment the index by 1 
+do_ppap_reverse	
+	jmp fast_reverse2 		; decrement speed value 2 (ppap) 
+do_ppap_forward
+	jmp fast_forward2		; increment speed value 2 (ppap) 
+do_lastpap_reverse
+	jmp fast_reverse3		; decrement speed value 3 (lastpap) 
+do_lastpap_forward
+	jmp fast_forward3		; increment speed value 3 (lastpap) 
+do_scroll_up
+	jmp scroll_up			; manually input VSCROL up for the VU Meter toggle, debug code
+do_scroll_down
+	jmp scroll_down			; manually input VSCROL down for the VU Meter toggle, debug code
+do_toggle_help
+	jmp toggle_help			; toggle the main player interface/help screen 
+	
+;----------------- 
+
+; index_selection 
+
+dec_index_selection
+	dex 				; decrement the index
+	bpl done_index_selection	; if the value did not underflow, done 
+	ldx #6				; if it went past the boundaries, load the last valid index to wrap around
+	bpl done_index_selection	; unconditional
+inc_index_selection
+	inx				; increment the index
+	cpx #7				; compare to the maximum of 7 button indexes
+	bcc done_index_selection	; if below 7, everything is good
+	ldx #0				; else, load 0 to wrap around
+done_index_selection
+	stx button_selection_flag 	; overwrite the index value
+	jsr set_highlight		; refresh the display for the chosen player button
+	rts				; done
+	
+;-----------------
+
+; timing modifyer inputs, only useful for debugging 
+
+fast_reverse
+	inc acpapx2
+	rts
+fast_forward
+	dec acpapx2
+	rts 
+fast_reverse2
+	inc ppap
+	rts
+fast_forward2
+	dec ppap
+	rts 
+fast_reverse3
+	inc lastpap
+	rts
+fast_forward3	
+	dec lastpap
+	rts
+	
+;-----------------
+
+toggle_vumeter
+	lda scroll_buffer
+	bne no_toggle_interrupt
+	lda #0			; vumeter flag, 0 is vumeter, else FF displays the POKEY registers
+	vumeter_toggle equ *-1
+	eor #$FF		; invert bits 
+	sta vumeter_toggle	; overwrite the flag with the new value
+	lda #33
+	sta scroll_buffer
+no_toggle_interrupt
+	rts 
+
+;-----------------
+	
+toggle_rasterbar 
+	lda rasterbar_toggler	; rasterbar flag, a negative value means the rasterbar display is active 
+	eor #$FF		; invert bits 
+	sta rasterbar_toggler	; overwrite the rasterbar flag, execution continues like normal from here 
+	rts 
+	
+;-----------------
+
+toggle_loop
+	lda loop_toggle		; loop flag, 0 is unset, else it is set with FF
+	eor #$FF		; invert bits 
+	sta loop_toggle		; overwrite the flag with the new value
+	rts 
+	
+;-----------------
+
+toggle_help
+	lda #0
+	help_toggler equ *-1
+	eor #$FF
+	sta help_toggler
+	bmi display_help
+display_player
+	lda <line_0a
+	sta mode2_toggle
+	lda >line_0a
+	sta mode2_toggle+1
+	rts
+display_help	
+	lda <help_0
+	sta mode2_toggle
+	lda >help_0
+	sta mode2_toggle+1
+	rts
+
+;-----------------
+
+;* menu buttons highlight subroutine
+
+set_highlight 
+	ldx #6				; 7 buttons to index
+set_highlight_a
+	txa 				; transfer to accumulator
+	asl @				; multiply by 2
+	tay 				; transfer to Y, use to index the values directly
+	lda b_handler,y			; load the character from this location
+	bpl set_highlight_b		; positive -> no highlight, skip overwriting it
+	eor #$80 			; invert the character
+	sta b_handler,y			; overwrite, no highlight to see again 
+set_highlight_b
+	dex 				; decrease the index and load the next character using it
+	bpl set_highlight_a		; as long as X is positive, do this again until all characters were reset 
+set_highlight_c 
+	lda button_selection_flag	; load the button flag value previously set in memory
+	asl @				; multiply it by 2 for the index 
+	tay				; transfer to Y, use it to index the character directly
+	lda b_handler,y 		; load the character in memory 
+	eor #$80 			; invert the character, this will now define it as "highlighted"
+	sta b_handler,y 		; write the character in memory, it is now selected, and will be processed again later 
+	rts
+
+;-----------------
+
+;* debug code, for displaying the VCOUNT and number of scanlines used during the LZSS driver play
+
+/*
+draw_scanlines
+	mwa #line_0 DISPLAY	; move the display pointer to the correct position first
+	lda #0
+	VCOUNTER equ *-1
+	jsr hex2dec_convert	; convert it to decimal 
+	ldy #21
+	jsr printhex_direct 
+	lda #0
+	VSCANLINES equ *-1
+	jsr hex2dec_convert	; convert it to decimal 
+	ldy #35
+	jsr printhex_direct
+*/
+	
+;-----------------
+
+;* print most infos on screen
 ;* TODO: optimise the code running here so it won't hog all the VBI time
 	
-; get the right screen position
-	mwa #line_0a DISPLAY 
+print_player_infos
+	mwa #line_0a DISPLAY 	; get the right screen position
 
 print_minutes
 	lda v_minute
@@ -427,40 +936,92 @@ print_row
 print_loop
 	ldy #174
 	lda loop_toggle
-	bmi yes_loop		; it *should* be 0 if not looping, it will be overwritten anyway
+	bmi yes_loop			; it *should* be 0 if not looping, it will be overwritten anyway
 	lda #0
 	beq no_loop
 yes_loop
 	lda #"*" 
 no_loop
 	sta (DISPLAY),y 
+
+;* print current subtune pointers addresses, the code could be a lot better than that...
+
+Print_pointers
+	mwa #line_0a DISPLAY		; get the right screen position first
+	ldy #95
+	lda LZS.SongStartPtr+1
+	jsr printhex_direct
+	iny
+	lda LZS.SongStartPtr
+	jsr printhex_direct	
+	ldy #111
+	lda LZS.SongEndPtr+1
+	jsr printhex_direct
+	iny
+	lda LZS.SongEndPtr
+	jsr printhex_direct
+	rts
 	
 ;-----------------
 
-;* debug code
-
-/*
-	mwa #line_0 DISPLAY	; move the display pointer to the correct position first
-	
+test_vumeter_toggle
+	lda #0			; the scroll buffer value, if it has a value, it will be used for the amount to scroll
+	scroll_buffer equ *-1
+	beq no_vertical_scroll	; if the value is 0, skip this subroutine
+	jmp do_vumeter_toggle	; else, draw BOTH for the duration of the transition! it will also end with a RTS there
+no_vertical_scroll 
+	lda vumeter_toggle	; the toggle flag will set which direction the scrolling goes
+	bpl do_begindraw	; positive flag, VU Meter, else, POKEY registers, it will be one or the other
+do_draw_registers
+	jmp draw_registers	; end with a RTS
+do_begindraw
+	jmp begindraw		; end with a RTS
+do_vumeter_toggle 
+	lda vumeter_toggle	; the toggle flag will set which direction the scrolling goes
+	bpl scroll_down		; positive flag, scroll down, else, scroll up 
+scroll_up
+	inc vertiscroll
+	lda vertiscroll
+	cmp #8
+	bcc scroll_done
+        clc
+        lda mode6_toggle
+        adc #20
+        sta mode6_toggle
+        lda mode6_toggle+1
+        adc #0
+        sta mode6_toggle+1
 	lda #0
-	VCOUNTER equ *-1
-	jsr hex2dec_convert	; convert it to decimal 
-	ldy #21
-	jsr printhex_direct
+	sta vertiscroll
+	beq scroll_done
+scroll_down
+	dec vertiscroll
+	bpl scroll_done
+        sec
+        lda mode6_toggle
+        sbc #20
+        sta mode6_toggle
+        lda mode6_toggle+1
+        sbc #0
+        sta mode6_toggle+1 
+	lda #7
+	sta vertiscroll
+scroll_done
+	lda #6
+	vertiscroll equ *-1
+	sta VSCROL 
+	dec scroll_buffer
+	bpl scroll_done_a
+	lda #0			; once it finished scrolling, the buffer is reset to 0
+	sta scroll_buffer
+scroll_done_a
+	jsr draw_registers	; draw BOTH for the duration of the transition!
+	jsr begindraw		; using JSR is easier since they go one after the other without any further work
+	rts
 
-	lda #0
-	VSCANLINES equ *-1
-	jsr hex2dec_convert	; convert it to decimal 
-	ldy #35
-	jsr printhex_direct
-*/
+;-----------------
 
-;* end of debug code 
-
-	jsr print_pointers	; update the pointers displayed on screen (terrible code but I want to make a proper loop for it...) 
-	lda vumeter_toggle
-	bpl begindraw
-
+;* draw POKEY registers
 ;* this is incredibly crappy code but it gets the job done...
 
 draw_registers
@@ -476,11 +1037,9 @@ draw_registers_a
 	:2 inx
 	cpx #8
 	bne draw_registers_a
-	
 	lda SDWPOK0,x
 	ldy #68
 	jsr printhex_direct	
-	
 	ldy #46
 	ldx #1
 draw_registers_b	
@@ -492,21 +1051,19 @@ draw_registers_b
 	:2 inx
 	cpx #9
 	bne draw_registers_b
-	
 	lda SDWPOK0,x
 	ldy #78
 	jsr printhex_direct
-	
-	jmp return_from_vbi 	; done
+	rts
 	nop
 	countdown equ *-1
 
 ;-----------------
 
+;* draw the volume blocks
+
 ;* TODO: move this code elsewhere, this hogs too much VBI time!
 ;* TODO2: this code could be MUCH better too...
-
-; draw the volume blocks
 	
 ; index ORA
 ; #$00 -> COLPF0
@@ -704,767 +1261,6 @@ decay_next
 	dex			; next column index
 	bpl decay_again		; repeat until all columns were done 
 decay_done
-	
-;-----------------
-
-return_from_vbi
-
-	sta WSYNC		; horizontal sync, this seems to make the timing more stable
-
-;* debug code
-
-/*
-	ldy #0			; clear debug colour (#56) 
-	sty COLBK		; background colour
-	sty COLPF2		; playfield colour 2
-*/
-
-;* end of debug code
-
-	pla			; since we're in our own vbi routine, pulling all values manually is required
-	tay
-	pla
-	tax
-	pla
-	rti			; return from interrupt
-
-;-----------------
-
-;---------------------------------------------------------------------------------------------------------------------------------------------;
-
-;* everything below this point is either stand alone subroutines that can be called at any time, or some misc data such as display list 
-
-; wait for vblank subroutine
-
-wait_vblank 
-	lda RTCLOK+2		; load the real time frame counter to accumulator
-wait        
-	cmp RTCLOK+2		; compare to itself
-	beq wait		; equal means it vblank hasn't began
-	rts
-
-;-----------------
-
-; fast setpokey variant, intended for double buffering the decompressed LZSS bytes as fast as possible for timing and cosmetic purpose
-
-SDWPOK0
-POKF0	dta $00
-POKC0	dta $00
-POKF1	dta $00
-POKC1	dta $00
-POKF2	dta $00
-POKC2	dta $00
-POKF3	dta $00
-POKC3	dta $00
-POKCTL0	dta $00
-POKSKC0	dta $03		; SKCTL, currently not used by the LZSS driver...
-
-setpokeyfull
-	lda POKSKC0	; SKCTL initialisation is never done from the LZSS driver, so let's do it manually here
-	sta $D20F	; SKCTL, currently not used by the LZSS driver...
-setpokeyfast
-	ldy POKCTL0
-	lda POKF0
-	ldx POKC0
-	sta $D200
-	stx $D201
-	lda POKF1
-	ldx POKC1
-	sta $D202
-	stx $D203
-	lda POKF2
-	ldx POKC2
-	sta $D204
-	stx $D205
-	lda POKF3
-	ldx POKC3
-	sta $D206
-	stx $D207
-	sty $D208
-	rts
-
-;-----------------
-
-; print text from data tables, useful for many things 
-
-printinfo 
-	sty charbuffer
-	ldy #0
-do_printinfo
-        lda $ffff,x
-infosrc equ *-2
-	sta (DISPLAY),y
-	inx
-	iny 
-	cpy #0
-charbuffer equ *-1
-	bne do_printinfo 
-	rts
-
-;-----------------
-
-; print hex characters for several things, useful for displaying all sort of debugging infos
-	
-printhex
-	ldy #0
-printhex_direct     ; workaround to allow being addressed with y in different subroutines
-	pha
-	:4 lsr @
-	;beq ph1    ; comment out if you want to hide the leftmost zeroes
-	tax
-	lda hexchars,x
-ph1	
-        sta (DISPLAY),y+
-	pla
-	and #$f
-	tax
-	mva hexchars,x (DISPLAY),y
-	rts
-hexchars 
-        dta d"0123456789ABCDEF"
-
-;-----------------
-
-; quick and dirty way to convert a hex value to decimal for display purposes
-; note that the higher the number to convert, the slower this process becomes!
-;* OPTIMISATION: count from 10 instead of 0, which would be a lot faster since 0 to 9 don't need conversion
-
-hex2dec_convert
-	cmp #10			; below 10 -> 0 to 9 inclusive will display like expected, skip the conversion
-	bcc hex2dec_convert_b
-	sec
-	sbc #10			; subtract 10 first, this will save 10 loops of this code!
-	tay
-	lda #$10		; add from 10 (hex) 
-	dey 
-	bmi hex2dec_convert_b	; overflow! set the value directly
-	clc
-	sed
-hex2dec_convert_a
-	adc #1 
-	dey
-	bpl hex2dec_convert_a
-	cld
-hex2dec_convert_b
-	rts
-	
-;-----------------
-
-; toggle Stop, similar to pause, but Play will restart the subtune from the beginning
-; unlike Play/Pause, Stop could only be done once! 
-; this is done in order to prevent the "pressing Stop causes the player to seek 1 tune back" bug...
-;* TODO: make this a proper subroutine
-
-stop_toggle
-	jsr stop_pause_reset		; pause the player and clear the AUDC registers 
-	lda is_playing_flag		; is it already stopped?
-	cmp #1
-	bne stop_toggle_a		; not equal -> not yet stopped
-	rts 
-stop_toggle_a
-	ldy #1
-	sty is_playing_flag		; 1 -> player stopped
-	dey				; Y = 1 -> Y = 0
-	sty LZS.Initialized		; reset LZSS initialisation flag
-	sty is_fadeing_out		; make sure to stop it too!
-	sty stop_on_fade_end
-	dec SongIdx			; decrement the index position from LZSSP only once, essentially resetting the subtune
-	jsr SetNewSongPtrsLoopsOnly	; update the pointers and also reset the play/loop count in the process
-	jsr reset_timer 		; clear the timer in STOP mode, unlike PAUSE, which would simply freeze the value until it is unpaused
-	ldx #16				; offset by 16 for STOP characters
-	bne play_pause_button_toggle_a	; finish in the play_pause code from here, unconditional 
-
-;-----------------
-
-; toggle Play/Pause mode
-;* TODO: make this a proper subroutine
-
-play_pause_toggle 
-
-;	lda #156
-;backup_speed equ *-1
-;	cmp acpapx2
-;	beq play_pause_toggle_a
-;	sta acpapx2
-;	bne set_play			; return to normal speed and continue playing
-	
-play_pause_toggle_a
-	lda #0
-	is_playing_flag equ *-1 
-	beq set_pause			; 0 -> currently playing, else, it was either paused or stopped 
-set_play 
-	ldx #0				; will set the play flag to 0, and also the offset for the PLAY characters 
-	stx is_playing_flag
-	beq play_pause_button_toggle_a
-set_pause 
-	dec is_playing_flag		; 00 -> FF
-	jsr stop_pause_mute		; pause the player and clear the AUDC registers 
-play_pause_button_toggle 
-	ldx #8				; offset by 8 for PAUSE characters	
-play_pause_button_toggle_a 
-	ldy #7				; 7 character buffer is enough 
-	mwa #line_0e1 DISPLAY		; move the position to the correct line
-	mwa #txt_PLAY infosrc		; set the pointer for the text data to this location
-	jsr printinfo 			; write the new text in this location 
-	ldx line_0e1			; the play/pause/stop character
-	cpx #$7B			; is it the STOP character?
-	bne play_pause_button_toggle_b	; if not, overwrite the character in the buttons display with either PLAY or PAUSE
-	inx				; else, make sure PLAY is loaded, then write it in memory 
-play_pause_button_toggle_b	
-	stx b_play 			; overwrite the Play/Pause character
-	jsr set_highlight		; refresh the display for the updated graphics, and also to display which player button is highlighted
-	rts
-
-;-----------------
-
-set_subtune_count
-	lda #0
-SongIdx	equ *-1
-	cmp #$FF
-current_subtune equ *-1
-	beq set_subtune_count_d	; still playing the same subtune, skip this subroutine
-	sta current_subtune	; set the new value in memory	
-set_subtune_count_a
-	jsr reset_timer 	; also reset the timer so new tunes always play from 0:00
-set_subtune_count_b
-	mwa #subtpos DISPLAY	; get the right screen position first
-	lda SongIdx		; index position from LZSSP
-	jsr hex2dec_convert	; convert it to decimal 
-	jsr printhex		; Y may not be 0 after the decimal conversion, do not risk it
-	lda rasterbar_colour
-	clc
-	adc #16
-	sta rasterbar_colour
-set_subtune_count_c
-	lda SongTotal		; index total from LZSSP, this won't change once it was set, except during the initialisation
-	cmp #0
-total_subtune equ *-1
-	beq set_subtune_count_d	; still the same total, nothing else to do here
-	sta total_subtune	; set the new value in memory	
-	jsr hex2dec_convert	; convert it to decimal 
-	ldy #3			; offset to update the other number
-	jsr printhex_direct	; this time Y will position where the character is written
-set_subtune_count_d
-	rts
-	
-;-----------------	
-
-reset_timer
-	lda #0
-	sta v_second		; reset the seconds counter
-	sta v_minute		; reset the minutes counter
-	lda framecount		; number of frames defined at initialisation  
-	sta v_frame		; reset the frames counter 
-	rts
-	
-;-----------------
-
-; stop and quit
-
-stopmusic 
-	jsr stop_pause_reset 
-	mwa oldvbi VVBLKI	; restore the old vbi address
-	ldx #$00		; disable playfield 
-	stx SDMCTL		; write to Direct Memory Access (DMA) Control register
-	dex			; underflow to #$FF
-	stx CH			; write to the CH register, #$FF means no key pressed
-	cli			; this may be why it seems to crash on hardware... I forgot to clear the interrupt bit!
-	jsr wait_vblank		; wait for vblank before continuing
-	jmp (DOSVEC)		; return to DOS, or Self Test by default
-
-;----------------- 
-
-; pause the player and reset the registers
-
-stop_pause_reset
-	lda #0			; default values
-	ldy #8
-stop_pause_reset_a 
-	sta SDWPOK0,y		; clear the POKEY values in memory
-	dey 
-	bpl stop_pause_reset_a	; repeat until all channels were cleared 
-	jsr setpokeyfull	; overwrite the actual registers, including SKCTL, just in case
-	rts
-
-;----------------- 
-
-; mute the channels but do not overwrite the AUDF or AUDCTL so the contents gets re-used as soon as it's playing 
-
-stop_pause_mute
-	lda #0			; default values
-	ldy #7			; begin on the last channel's AUDC
-stop_pause_mute_a 
-	sta SDWPOK0,y		; clear the AUDC values ONLY
-	:2 dey 			; DEY twice to avoid the AUDF values
-	bpl stop_pause_mute_a	; repeat until all channels were cleared 
-	jsr setpokeyfast	; overwrite the actual registers
-	rts
-
-;----------------- 
-
-;* menu input handler subroutine, all jumps will end on a RTS, and return to the 'set held key flag' execution 
-
-do_button_selection   
-	lda #2			; by default, the PLAY/PAUSE button 
-button_selection_flag equ *-1
-	asl @
-	asl @ 
-	sta b_index+1
-b_index	bcc *
-b_0	jmp seek_reverse 	; #0 => seek reverse 
-	nop
-b_1	jmp fast_reverse	; #1 => fast reverse (decrement speed) 
-	nop
-b_2	jmp play_pause_toggle	; #2 => play/pause 
-	nop
-b_3	jmp fast_forward 	; #3 => fast forward (increment speed) 
-	nop
-b_4	jmp seek_forward 	; #4 => seek forward 
-	nop
-b_5	jmp stop_toggle 	; #5 => stop
-	nop
-b_6	jmp stopmusic 		; #6 => eject 
-	
-;-----------------
-
-;* check all keys that have a purpose here... 
-;* this is the world's most cursed jumptable ever created!
-;* regardless, this finally gets rid of all the spaghetti code I made previously!
-
-check_keys
-	cpy #64				; within the valid range of key input?
-	bcc do_check_keys		; below 64, it's good to go!
-	rts				; else, return immediately from the subroutine
-do_check_keys
-	ldx button_selection_flag	; this will be used for the menu selection below, if the key is matching the input... could be better
-	tya				; transfer to the accumulator to make a quick and dirty jump table
-	asl @				; ASL only once, allowing a 2 bytes index, good enough for branching again immediately and unconditionally, 128 bytes needed sadly...
-	sta k_index+1			; branch will now match the value of Y
-k_index	bne * 
-	bcc do_toggle_loop		; Y = 0 -> L key
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	bcc do_key_left			; Y = 6 -> Atari 'Left' / '+' key
-	bcc do_key_right		; Y = 7 -> Atari 'Right' / '*' key 
-	bcc b_5				; Y = 8 -> 'O' key (not zero!!) 
-	rts:nop
-	bcc b_2				; Y = 10 -> 'P' key
-	rts:nop
-	bcc do_button_selection		; Y = 12 -> 'Enter' key
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	bcc b_3				; Y = 24 -> '4' key
-	rts:nop
-	bcc b_1				; Y = 26 -> '3' key
-	bcc do_ppap_forward		; Y = 27 -> '6' key
-	bcc b_6				; Y = 28 -> 'Escape' key
-	bcc do_ppap_reverse		; Y = 29 -> '5' key
-	bcc b_4				; Y = 30 -> '2' key
-	bcc b_0				; Y = 31 -> '1' key
-	rts:nop
-	bcc do_toggle_rasterbar 	; Y = 33 -> 'Spacebar' key
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	bcc do_toggle_vumeter		; Y = 40 -> 'R' key
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	bcc do_lastpap_reverse		; Y = 51 -> '7' key
-	rts:nop
-	bcc do_lastpap_forward		; Y = 53 -> '8' key
-	rts:nop
-	rts:nop
-	bcc do_trigger_fade_immediate	; Y = 56 -> 'F' key
-	rts:nop
-	bcc do_key_right		; Y = 58 -> 'D' key
-	rts:nop
-	rts:nop
-	rts:nop
-	rts:nop
-	bcc do_key_left			; Y = 63 -> 'A' key
-do_toggle_loop
-	jmp toggle_loop			; toggle the player 'loop' flag on/off
-do_toggle_rasterbar
-	jmp toggle_rasterbar		; toggle the rasterbar display on/off
-do_toggle_vumeter
-	jmp toggle_vumeter		; toggle the VU Meter display with POKEY registers display
-do_trigger_fade_immediate
-	jmp trigger_fade_immediate	; immediately set the 'fadeout' flag then stop the player once finished
-do_key_left
-	jmp dec_index_selection 	; decrement the index by 1	
-do_key_right
-	jmp inc_index_selection 	; increment the index by 1 
-
-do_ppap_reverse	
-	jmp fast_reverse2 		; decrement speed value 2 (ppap) 
-do_ppap_forward
-	jmp fast_forward2		; increment speed value 2 (ppap) 
-	
-do_lastpap_reverse
-	jmp fast_reverse3		; decrement speed value 3 (lastpap) 
-do_lastpap_forward
-	jmp fast_forward3		; increment speed value 3 (lastpap) 
-
-;----------------- 
-
-; index_selection 
-
-dec_index_selection
-	dex 				; decrement the index
-	bpl done_index_selection	; if the value did not underflow, done 
-	ldx #6				; if it went past the boundaries, load the last valid index to wrap around
-	bpl done_index_selection	; unconditional
-inc_index_selection
-	inx				; increment the index
-	cpx #7				; compare to the maximum of 7 button indexes
-	bcc done_index_selection	; if below 7, everything is good
-	ldx #0				; else, load 0 to wrap around
-done_index_selection
-	stx button_selection_flag 	; overwrite the index value
-	jsr set_highlight		; refresh the display for the chosen player button
-	rts				; done
-	
-;-----------------
-
-; timing modifyer inputs, only useful for debugging 
-
-fast_reverse
-	inc acpapx2
-	rts
-fast_forward
-	dec acpapx2
-	rts 
-	
-fast_reverse2
-	inc ppap
-	rts
-fast_forward2
-	dec ppap
-	rts 
-	
-fast_reverse3
-	inc lastpap
-	rts
-fast_forward3	
-	dec lastpap
-	rts
-	
-;-----------------	
-
-; seek forward and reverse, both use the initialised flag + the new song pointers subroutine to perform it quickly
-; reverse will land in the forward code, due to the way the song pointers are initialised, forward doesn't even need to increment the index!
-
-seek_wraparound
-	ldx total_subtune		; the total number is also offset by 1
-	inx				; increment once, reverse will decrement twice!
-	stx SongIdx			; overwrite the index with the new value, continue like normal in the reverse code
-seek_reverse
-	dec SongIdx			; decrement the index position from LZSSP 
-	beq seek_wraparound		; in case it landed on 0, do not go further! else it will be out of bounds!
-	dec SongIdx			; decrement again if it was not on 0, it will increment back to the expected value 
-seek_forward
-	lda #0
-	sta LZS.Initialized		; reset the LZSS state again
-	sta is_fadeing_out		; make sure to disable fading out as well!
-	jsr SetNewSongPtrsLoopsOnly	; update the pointers and also reset the play/loop count in the process
-	rts 
-
-;-----------------
-
-toggle_vumeter
-	ldx <mode_6
-	lda #0			; vumeter flag, 0 is vumeter, else FF displays the POKEY registers
-	vumeter_toggle equ *-1
-	eor #$FF		; invert bits 
-	sta vumeter_toggle	; overwrite the flag with the new value
-	bpl toggle_vumeter_a
-	ldx <POKE1
-toggle_vumeter_a	
-	stx mode6_toggle
-	rts 
-
-;-----------------
-	
-toggle_rasterbar 
-	lda rasterbar_toggler	; rasterbar flag, a negative value means the rasterbar display is active 
-	eor #$FF		; invert bits 
-	sta rasterbar_toggler	; overwrite the rasterbar flag, execution continues like normal from here 
-	rts 
-	
-;-----------------
-
-toggle_loop
-	lda loop_toggle		; loop flag, 0 is unset, else it is set with FF
-	eor #$FF		; invert bits 
-	sta loop_toggle		; overwrite the flag with the new value
-	rts 
-	
-;-----------------
-
-;* menu buttons highlight subroutine
-
-set_highlight 
-	ldx #6				; 7 buttons to index
-set_highlight_a
-	txa 				; transfer to accumulator
-	asl @				; multiply by 2
-	tay 				; transfer to Y, use to index the values directly
-	lda b_handler,y			; load the character from this location
-	bpl set_highlight_b		; positive -> no highlight, skip overwriting it
-	eor #$80 			; invert the character
-	sta b_handler,y			; overwrite, no highlight to see again 
-set_highlight_b
-	dex 				; decrease the index and load the next character using it
-	bpl set_highlight_a		; as long as X is positive, do this again until all characters were reset 
-set_highlight_c 
-	lda button_selection_flag	; load the button flag value previously set in memory
-	asl @				; multiply it by 2 for the index 
-	tay				; transfer to Y, use it to index the character directly
-	lda b_handler,y 		; load the character in memory 
-	eor #$80 			; invert the character, this will now define it as "highlighted"
-	sta b_handler,y 		; write the character in memory, it is now selected, and will be processed again later 
-	rts
-	
-;-----------------
-
-;* Volume fadeout subroutine
-
-fade_volume_loop
-	lda is_playing_flag	; is the tune currently playing?
-	bne fade_volume_done	; if paused or stopped, skip this subroutine!
-check_if_fading 
-	lda #0			; fadeing out timer and flag
-	is_fadeing_out equ *-1
-	beq fade_volume_done	; equal 0 means it is not set, and must be skipped
-	bpl continue_fadeout	; above 0 means it is already set, skip initialising again
-begin_fadeout
-	lda #1			; unit of volume to subtract
-	sta is_fadeing_out	; flag and initial fade volume set
-	lda v_second		; current second
-	sta last_second_seen	; initialise the timer for fadeout
-continue_fadeout	
-	ldy #7			; index from the 4th AUDC 
-fade_volume_loop_a
-	lda SDWPOK0,y		; current POKEY buffer
-	tax			; backup for the next step
-	and #$0F		; keep only the volume values
-	sec			; set carry for the subtraction
-	sbc is_fadeing_out	; subtract the fading value directly
-	beq volume_loop_again	; if value = 0, write that value directly
-	bpl set_new_volume	; else if the subtraction did not overflow, continue with the next step
-	lda #0			; else, set the volume to 0 
-	beq volume_loop_again	; unconditional 
-set_new_volume	
-	sta ora_volume		; this value will be used for the ORA instruction 
-	txa			; get back the AUDC value loaded a moment before
-	and #$F0		; only keep the Distortion bits
-	ora #0			; combine the new volume to it
-	ora_volume equ *-1
-volume_loop_again
-	sta SDWPOK0,y		; write the new AUDC value in memory for later
-	:2 dey			; decrement twice to only load the AUDC
-	bpl fade_volume_loop_a	; continue this loop until Y overflows to $FF 
-	lda v_second		; current second count
-	cmp #0			; compare to the last second loaded 
-	last_second_seen equ *-1
-	beq fade_volume_done	; equal means 1 second has not yet passed, done
-	sta last_second_seen	; otherwise, this becomes the new value to compare
-	inc is_fadeing_out	; increment the fadeout value to subtract by 1 
-	lda is_fadeing_out	; load that value for the comparison 
-	cmp #11			; 10 seconds must have passed to reach 10 units
-	bcc fade_volume_done	; if the value is below the count, done 	
-	lda #0			; this flag tells the player if it should also stop upon fadeing out!
-	stop_on_fade_end equ *-1
-	bpl fade_volume_play	; positive value: continue playing
-	jmp stop_toggle		; else, stop the player once the end of the fadeout is reached	
-fade_volume_play	
-	jmp seek_forward	; end the song prematurely, and seek the next subtune as soon as this is reached!
-fade_volume_done
-	rts
-
-;-----------------
-
-;* IMPORTANT NOTE: 
-;*
-;* Indexing using X the INX for the next subtune will only work properly if all tunes are in sequential order!
-;* If things are not exactly adjacent, things will break!
-;* The only reason why I decided to use this method was to index all subtunes very easily
-;* But then I realised that re-using data will cause problems since the pointers won't be alligned anymore!
-;* With that in mind, as long as the subtunes are all in sequential order, the method will work perfectly fine!
-;* 
-;* TODO: add an alternative index for 'looped' tunes, so they will seamlessly play infinitely!
-;* This would also mitigate the issues organising all the data as well
-           
-SetNewSongPtrsFull       
-	ldx #0
-	stx SongIdx 	
-	stx is_fadeing_out
-	stx stop_on_fade_end
-SetNewSongPtrsLoopsOnly
-	lda #4
-	sta is_looping 
-SetNewSongPtrs
-	ldx SongIdx				; current song index
-	cpx #SongsIndexEnd-SongsIndexStart 
-	SongTotal equ *-1		
-	bcc SetNewSongPtrs_a			; continue, index is in the valid range
-	beq test_boundaries			; if index is equal to total, make sure it was from previously being set!
-;	bcs SetNewSongPtrsFull			; else, it overshot, and must wrap around!
-test_boundaries 
-	lda is_looping				; is the loop flag set? if it is not, there is a wrap around to do!	
-	cmp #4					; 2 and below -> all good, 4 or above -> pointers are about to be set, bad!
-	bcc SetNewSongPtrs_a
-;	bcs SetNewSongPtrsFull
-test_boundaries_a
-	lda is_fadeing_out			; in case it was fadeing out but also reached the end of index...
-	beq SetNewSongPtrsFull			; if not fadeing out, do not take a chance, wrap around
-	bne SetNewSongPtrs_c			; else, catch whatever remains in that bit of code, it's 8:32 am and I most likely broke even more stuff now
-	
-
-SetNewSongPtrs_a
-	dec is_looping				; must start at 4!
-	lda #4					; is the 'loop' flag set?
-	is_looping equ *-1
-;	bmi SetNewSongPtrsFull			;* if this happens, you did something wrong, Vin!
-	bmi DontSet				; of course I did something wrong, broke tunes looping before fade finished
-	beq trigger_fade			; loop already set
-	cmp #1
-	beq DontSet				; looping, so no need to update pointers
-	cmp #2
-	beq iliketosingaloopy			; load the loop subtune pointers 
-SetNewSongPtrs_b
-	lda is_fadeing_out			; if it's too early to load a new subtune! A dummy was most likely detected!
-	beq SetNewSongPtrs_e			; if not fadeing out, carry on
-SetNewSongPtrs_c
-	lda stop_on_fade_end			; is the tune intended to stop?
-	bpl SetNewSongPtrs_d			; if no, override the subtune for the next one, and interrupt the fadeout
-	lda #11					; else, load this number because 12 is nice
-	sta is_fadeing_out			; then set the timer further immediately to end it!
-	bne SetNewSongPtrs_e			; unconditional, since the tune should end anyway, no harm done here
-SetNewSongPtrs_d
-	lda #0
-	sta is_fadeing_out			; interrupt the fadeout, the next tune should then load like normal
-SetNewSongPtrs_e	
-	lda SongsSLOPtrs,x
-	sta LZS.SongStartPtr
-	lda SongsSHIPtrs,x
-	sta LZS.SongStartPtr+1
-	inx 					; Song end is always the one byte adjacent to it-- *see the note above
-	lda SongsSLOPtrs,x
-	sta LZS.SongEndPtr
-	lda SongsSHIPtrs,x
-	sta LZS.SongEndPtr+1
-	stx SongIdx				; update the index with X already 1 position ahead
-	jsr check_loop_for_dummies		; carry flag will be returned
-	bcc SetNewSongPtrs			; carry clear -> dummy
-DontSet	
-	rts
-
-;-----------------	
-		
-;* TODO: index this shit better, this is just poorly done, Vin! You can do better than that
-		
-iliketosingaloopy
-	dex				; first start by DEX so it will land on the correct spot always!
-	lda LoopsSLOPtrs,x
-	sta LZS.SongStartPtr
-	lda LoopsSHIPtrs,x
-	sta LZS.SongStartPtr+1
-	inx				; Song end is always the one byte adjacent to it-- *see the note above
-	lda LoopsSLOPtrs,x
-	sta LZS.SongEndPtr
-	lda LoopsSHIPtrs,x
-	sta LZS.SongEndPtr+1
-	stx SongIdx			; update the index with X already 1 position ahead
-	jsr check_loop_for_dummies	; carry flag will be returned
-	bcs DontSet			; carry set -> not a dummy
-	jmp SetNewSongPtrsLoopsOnly	; else, return to the subroutine's start and do it again!
-
-;-----------------
-
-;* TODO: make the fadeout trigger its own subroutine, and also force a play/loop count flag to initialise a 'loop' as well
-;* this would provide the ability to initialise a fadeout from anything that may require a transition in a game/demo :3
-	
-trigger_fade_immediate
-	lda is_playing_flag	; is the player currently in 'play' mode?
-	bne trigger_fade_b	; if not, skip this subroutine, there is nothing else to do
-	lda is_fadeing_out	; is the tune currently playing already engaged in a fadeout?
-	bne trigger_fade_b	; if not 0, there is a fadeout in progress! skip this subroutine
-	lda #3			; will roll back to 2 on the end of song if reached early, allowing loop during fadeout
-	sta is_looping		
-	dec stop_on_fade_end	; set the flag to tell the player to send a stop command once this is reached!
-	bne trigger_fade_a	; unconditional, this will also bypass the player's own 'loop' flag!
-trigger_fade 
-	lda #0			; new 'loop' flag, instead of using the already messy counter value
-	loop_toggle equ *-1
-	bpl trigger_fade_a	; if positive, not looping, finish like normal with a fadeout!
-	inc is_looping		; 0 -> 1, sneaky way to work around it, it will loop infinitely
-	bpl trigger_fade_b	; unconditional, the tune will now loop for as long as the flag is set!	
-trigger_fade_a 
-	dec is_fadeing_out	; $00 -> $FF, the fadeout flag is set
-trigger_fade_b
-	rts
-	
-;-----------------
-
-;* Carry flag returns the status
-;* Carry Clear -> Dummy/Invalid subtune length
-;* Carry Set -> Should be perfectly fine data, unless wrong pointers were set, garbage would play!
-
-check_loop_for_dummies
-	lda LZS.SongEndPtr+1
-	cmp LZS.SongStartPtr+1
-	bne dummy_check_done	; END is either above or below START, in any case, the Carry flag will tell the truth!
-maybe_a_dummy	
-	lda LZS.SongEndPtr
-	sec
-	sbc LZS.SongStartPtr
-	cmp #2			; should be short enough...
-dummy_check_done
-	rts			; done! the carry flag will dictate what to do
-        
-;-----------------
-
-;* print current subtune pointer addresses 
-;* this could be a lot better than that...
-
-Print_pointers
-	mwa #line_0a DISPLAY	; get the right screen position first
-	ldy #95
-	lda LZS.SongStartPtr+1
-	jsr printhex_direct
-	iny
-	lda LZS.SongStartPtr
-	jsr printhex_direct	
-	ldy #111
-	lda LZS.SongEndPtr+1
-	jsr printhex_direct
-	iny
-	lda LZS.SongEndPtr
-	jsr printhex_direct
 	rts
 	
 ;-----------------

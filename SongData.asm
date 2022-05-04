@@ -3,16 +3,34 @@
 ;* IMPORTANT: due to technical reasons, every indexes MUST end with a dummy subtune! Otherwise the entire thing will break apart!
 
 S_Id_0
-	ins     '/RANDOM3/01 - SKETCH_71_TUNE_1.lzss'
-
+;	ins     '/RANDOM/BOUNCY_BOUNCER.lzss'
+	
 S_Id_1
-	ins     'DUMMY.lzss'
-
+;	ins     'DUMMY.lzss'
+	
 S_Id_2
-	ins     'DUMMY.lzss'
-
+;	ins     'DUMMY.lzss'	; MUSICIO
+	
 S_Id_3
-	ins 	'/RANDOM3/04 - SKETCH_73.lzss'
+	ins     '/RANDOM/SHORELINE.lzss'
+
+S_Id_4
+	ins     '/RANDOM/SIEUR_GOUPIL.lzss'
+	
+S_Id_5
+	ins     'DUMMY.lzss'	; SKETCH_24
+	
+S_Id_6
+	ins     '/RANDOM/SKETCH_53.lzss'
+	
+S_Id_7
+	ins     'DUMMY.lzss'	; SKETCH_58
+	
+S_Id_8
+;	ins     '/RANDOM/SKETCH_66.lzss'
+	
+S_Id_9
+	ins     'DUMMY.lzss'	; SKETCH_69  
 
 ;----------------------	
 
@@ -24,16 +42,34 @@ S_DUMMY
 ;* Looped subtunes index, if a dummy is inserted, the tune has a definite end and won't loop and/or fadeout!
 
 L_Id_0
-	ins	'/RANDOM3/01 - SKETCH_71_TUNE_1_LOOP.lzss'	
-
+;	ins     '/RANDOM/BOUNCY_BOUNCER_LOOP.lzss'
+	
 L_Id_1
-	ins     '/RANDOM3/02 - SKETCH_71_TUNE_2_LOOP.lzss'
-
+;	ins     '/RANDOM/DUMB3_LOOP.lzss'
+	
 L_Id_2
-	ins     '/RANDOM3/03 - SKETCH_72_LOOP.lzss'
-
+;	ins     '/RANDOM/MUSICIO_LOOP.lzss'	; MUSICIO
+	
 L_Id_3
-	ins 	'/RANDOM3/04 - SKETCH_73_LOOP.lzss'
+	ins     '/RANDOM/SHORELINE_LOOP.lzss'
+
+L_Id_4
+	ins     '/RANDOM/SIEUR_GOUPIL_LOOP.lzss'
+	
+L_Id_5
+	ins     '/RANDOM/SKETCH_24_LOOP.lzss'	; SKETCH_24
+	
+L_Id_6
+	ins     '/RANDOM/SKETCH_53_LOOP.lzss'
+	
+L_Id_7
+	ins     '/RANDOM/SKETCH_58_LOOP.lzss'	; SKETCH_58
+	
+L_Id_8
+;	ins     '/RANDOM/SKETCH_66_LOOP.lzss'
+	
+L_Id_9
+	ins     '/RANDOM/SKETCH_69_LOOP.lzss'	; SKETCH_69
 	
 ;----------------------	
 

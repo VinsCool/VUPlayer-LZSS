@@ -52,6 +52,7 @@
 
 .def POKEY 			= $D200
 .def KBCODE			= $D209
+.def RANDOM			= $D20A
 .def IRQEN          		= $D20E
 .def IRQST          		= $D20E
 .def SKCTL			= $D20F

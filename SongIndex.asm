@@ -4,19 +4,31 @@
 SongsIndexStart	
 		;* BEGIN INDEX HERE, USE HI BYTES FOR THIS PART
 SongsSHIPtrs 	
-		.byte .HI(S_Id_0) 
-		.byte .HI(S_Id_1) 
-		.byte .HI(S_Id_2) 
+;		.byte .HI(S_Id_0)
+;		.byte .HI(S_Id_1)
+;		.byte .HI(S_Id_2)
 		.byte .HI(S_Id_3) 
+		.byte .HI(S_Id_4)
+		.byte .HI(S_Id_5)
+		.byte .HI(S_Id_6)
+		.byte .HI(S_Id_7)
+;		.byte .HI(S_Id_8)
+		.byte .HI(S_Id_9)
 SongsIndexEnd
 		.byte .HI(S_DUMMY) 
 SongsEHIPtrs	
 		;* END INDEX HERE, MUST BE ENDED WITH A DUMMY TUNE
 SongsSLOPtrs	
-		.byte .LO(S_Id_0)
-		.byte .LO(S_Id_1)
-		.byte .LO(S_Id_2)
+;		.byte .LO(S_Id_0)
+;		.byte .LO(S_Id_1)
+;		.byte .LO(S_Id_2)
 		.byte .LO(S_Id_3)
+		.byte .LO(S_Id_4)
+		.byte .LO(S_Id_5)
+		.byte .LO(S_Id_6)
+		.byte .LO(S_Id_7)
+;		.byte .LO(S_Id_8)
+		.byte .LO(S_Id_9)
 SongsDummyEnd
 		.byte .LO(S_DUMMY) 
 SongsELOPtrs	
@@ -34,19 +46,31 @@ SongsELOPtrs
 LoopsIndexStart
 		;* BEGIN INDEX HERE, USE HI BYTES FOR THIS PART
 LoopsSHIPtrs
-		.byte .HI(L_Id_0)
-		.byte .HI(L_Id_1)
-		.byte .HI(L_Id_2)
+;		.byte .HI(L_Id_0)
+;		.byte .HI(L_Id_1)
+;		.byte .HI(L_Id_2)
 		.byte .HI(L_Id_3)
+		.byte .HI(L_Id_4)
+		.byte .HI(L_Id_5)
+		.byte .HI(L_Id_6)
+		.byte .HI(L_Id_7)
+;		.byte .HI(L_Id_8)
+		.byte .HI(L_Id_9)
 LoopsIndexEnd		
 		.byte .HI(L_DUMMY) 
 LoopsEHIPtrs	
 		;* END INDEX HERE, MUST BE ENDED WITH A DUMMY TUNE
 LoopsSLOPtrs
-		.byte .LO(L_Id_0) 
-		.byte .LO(L_Id_1) 
-		.byte .LO(L_Id_2) 
-		.byte .LO(L_Id_3) 
+;		.byte .LO(L_Id_0)
+;		.byte .LO(L_Id_1)
+;		.byte .LO(L_Id_2)
+		.byte .LO(L_Id_3)
+		.byte .LO(L_Id_4)
+		.byte .LO(L_Id_5)
+		.byte .LO(L_Id_6)
+		.byte .LO(L_Id_7)
+;		.byte .LO(L_Id_8)
+		.byte .LO(L_Id_9)
 LoopsDummyEnd		
 		.byte .LO(L_DUMMY) 
 LoopsELOPtrs	
