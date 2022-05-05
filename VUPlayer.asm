@@ -93,6 +93,7 @@ region_done
 ;----------------- 
 
 ; print instrument speed and region, and set colours, done once per initialisation
+;* TODO: fix this shit better, too much redundancy.
 
 	mwa #line_0 DISPLAY	; initialise the Display List indirect memory address for later
 	ldy #4			; 4 characters buffer 
@@ -111,12 +112,15 @@ region_done
 is_PAL				; VUMeter colours, adjusted for PAL 
 	lda #$2A
 	sta COLOR3
+	and #$F0
 	sta col3bak
 	lda #$BF
 	sta COLOR1
+	and #$F0
 	sta col1bak
 	lda #$DE
 	sta COLOR0
+	and #$F0
 	sta col0bak
 	ldx #50
 	mva:rne txt_PAL-1,y line_0-1,y-
@@ -124,12 +128,15 @@ is_PAL				; VUMeter colours, adjusted for PAL
 is_NTSC				; VUMeter colours, NTSC colours were originally used
 	lda #$4A
 	sta COLOR3
+	and #$F0
 	sta col3bak
 	lda #$DF
 	sta COLOR1
+	and #$F0
 	sta col1bak
 	lda #$1E
 	sta COLOR0
+	and #$F0
 	sta col0bak
 	ldx #60
 	mva:rne txt_NTSC-1,y line_0-1,y-
@@ -275,9 +282,9 @@ finish_loop_code_a
 
 vbi
 	sta WSYNC		; horizontal sync, so we're always on the exact same spot, seems to help with timing stability 
-	ldy #56			; debug colour 
-	sty COLBK		; background colour
-	sty COLPF2		; playfield colour 2
+;	ldy #56			; debug colour 
+;	sty COLBK		; background colour
+;	sty COLPF2		; playfield colour 2
 	lda #$FF		; DMA flag, set to allow skipping drawing the screen if it was not enabled
 	dma_flag equ *-1
 	beq continue_c		; if the value is 0, nothing will be drawn, else, continue with everything below
@@ -320,9 +327,9 @@ continue_c
 	jsr calculate_time 	; update the timer, this one is actually necessary, so even with DMA off, it will be executed 
 return_from_vbi			
 	sta WSYNC		; horizontal sync, this seems to make the timing more stable
-	ldy #0			; clear debug colour 
-	sty COLBK		; background colour
-	sty COLPF2		; playfield colour 2
+;	ldy #0			; clear debug colour 
+;	sty COLBK		; background colour
+;	sty COLPF2		; playfield colour 2
 	pla			;* since we're in our own vbi routine, pulling all values manually is required! 
 	tay
 	pla
@@ -336,94 +343,113 @@ return_from_vbi
 
 deli
 	pha
-	mwa #deli2 VDSLST	; set the next DLI
-	lda #2
-	sta delicounter
+	txa
+	pha
+	tya
+	pha
+	ldx #3
+	delix1 equ *-1
+	ldy #15
 	sta WSYNC
-
+	sta WSYNC
 deliloop 
 	sta WSYNC
-	lda col3bak		; Red
-	and #$F0
-	clc
-	adc delicounter
+	txa
+	adc #0
+	col3bak equ *-1	; Red
 	sta COLPF3
-	lda col0bak		; Yellow
-	and #$F0
-	clc
-	adc delicounter
+	txa
+	adc #0
+	col0bak equ *-1		; Yellow
 	sta COLPF0
-	lda col1bak		; Green
-	and #$F0
-	clc
-	adc delicounter
+	txa
+	adc #0
+	col1bak equ *-1		; Green
 	sta COLPF1
-	inc delicounter
-	lda #0
-	delicounter equ *-1
+	dey
+	bmi delireversal	; process the DEX branch if Y < 0
+	inx
 	sta WSYNC
-	cmp #15
+	cpx #15
+	bcc deliloop	
+	ldy #0			; if Y does not match X yet, force it
+	beq deliloop
+delireversal
+	dex
+	cpx #7
+	delix2 equ *-1
+	sta WSYNC
 	bne deliloop
-deliloop2
-	sta WSYNC
-	lda col3bak		; Red
-	and #$F0
-	clc
-	adc delicounter
-	sta COLPF3
-	lda col0bak		; Yellow
-	and #$F0
-	clc
-	adc delicounter
-	sta COLPF0
-	lda col1bak		; Green
-	and #$F0
-	clc
-	adc delicounter
-	sta COLPF1
-	dec delicounter
-	sta WSYNC
-	lda delicounter
-	bne deliloop2
-	sta delicounter
 	sta WSYNC
 delivered 	
-	lda #0
-	col0bak equ *-1
+	lda col0bak
 	sta COLPF0
-	lda #0
-	col1bak equ *-1
+	lda col1bak 
+	ora #$0F		; necessary for setting up the mode 2 text brightness level, else it's all black!
 	sta COLPF1
-	lda #0
-	col3bak equ *-1
+	lda col3bak 
 	sta COLPF3
+
+; * dumb test code, don't mind this shit
+	
+/*
+delicious 
+;	lda #10
+;	yummy equ *-1
+;	bne delidone_a		; if not equal, no shifting to do
+;	lda #10
+;	sta yummy
+	lda #0
+	delicounter equ *-1
+	bpl deliup
+
+delidown
+	cmp #252
+	bcc delidown_a
+	dec delix1
+	inc delix2
+	dec delicounter
+	bmi delidone 
+delidown_a
+	lda #0
+	sta delicounter
+	beq delidone
+
+deliup
+	cmp #4	
+	bcs deliup_a
+	inc delix1
+	dec delix2
+	inc delicounter
+	bpl delidone
+deliup_a	
+	lda #$FF
+	sta delicounter		; reverse 
+
+delidone
+;	inc col0bak
+;	inc col1bak
+;	inc col3bak
+
+;	lda col0bak
+;	add #16
+;	sta col0bak
+;	lda col1bak
+;	add #16
+;	sta col1bak
+;	lda col3bak
+;	add #16
+;	sta col3bak
+	
+delidone_a	
+	dec yummy
+*/
 	pla
-	rti
-//
-deli2
-	pha
-	mwa #deli VDSLST	; now the adress is reset to the first DLI
-	lda delicounter
-	beq delivered		; most likely finished, so do not overwrite the stack pointer addresses!
-	pla
-	sta delibackup
-	stx delibackup2	
+	tay
 	pla
 	tax
 	pla
-	pla
-	lda >delivered
-	pha
-	lda <delivered
-	pha
-	txa
-	pha
-	lda #0
-	delibackup equ *-1
-	ldx #0
-	delibackup2 equ *-1
 	rti
-//
 
 ;---------------------------------------------------------------------------------------------------------------------------------------------;
 
