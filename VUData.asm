@@ -11,8 +11,9 @@ line_0	dta d"                                        "
 
 ; volume bars, mode 6, 4 lines, this is also the default screen used when the program is loaded, which will be overwritten
 
+l_0_buf	dta d"                    "	;* add 20 bytes of empty bytes to prevent displaying garbage tiles on the line above 
 mode_6	dta d"     WELCOME TO     "
-mode_6a	dta d"   VUPLAYER V0.3!   "
+mode_6a	dta d"   VUPLAYER V1.0!   "
 mode_6b	dta d"  DURING PLAYBACK,  "
 mode_6c	dta d"  PRESS h FOR HELP  "
 
@@ -109,8 +110,9 @@ line_5	dta d"Line 5 (SHIFT is being held right now)  "
 
 ; version and credit
 
-line_6	dta d"VUPlayer + LZSS by VinsCool         "
-	dta d"v0.3"* 
+line_6	;dta d"VUPlayer + LZSS by VinsCool         "
+	dta d"VUPlayerLZSS by VinsCool            "
+	dta d"v1.0"* 
 	
 ; Display list
 

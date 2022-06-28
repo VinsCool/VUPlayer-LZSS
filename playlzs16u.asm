@@ -149,44 +149,11 @@ LZSSReset
     lda     DecodeChannel8.SMSet_CHRLo+1
     sta     DecodeChannel8.SMSet_CMP+1
 
-
-;//    ldx     #9-1-1
-;//    ldy     #0
-;//@SetNextChan    
-;//    lda     DecodeChannel0.SMSet_CHRLo+1,y
-;//    sta     DecodeChannel0.SMSet_CMP+1,y
-;//
-;//    lda     #DecodeChannel0.CopyStoreCH-DecodeChannel0.SMSet_Branch-2
-;//
-;//    lsr     LZS.chn_bits
-;//    bcc     @DontSkipCh
-;//    sta     DecodeChannel0.SMSet_CMP+1,y
-;//    lda     #DecodeChannel0.skip_chn-DecodeChannel0.SMSet_Branch-2
-;//    clc
-;//@DontSkipCh
-;//    sta     DecodeChannel0.SMSet_Branch+1,y
-;//
-;//    tya
-;//    adc     #LblDecodeChannel7-LblDecodeChannel8
-;//    tay
-;//    dex
-;//    bpl     @SetNextChan
-;//
-;//
-;//    lda     DecodeChannel8.SMSet_CHRLo+1
-;//    sta     DecodeChannel8.SMSet_CMP+1
-;//
-;//    //---
-;//    ldy     #1
-;//
-;//    //--- set initial value for each pokey channel
-;//    lda     LZS.chn_bitsInit
-;//    sta     LZS.chn_bits
-
     lda     #.HI(LZSSBuffers+$100*8)
     sta     @SMSet_LZSSBuf+2
 
-    ldx     #9-1
+    ldx #9-1
+    
 @SetFirstFrame 
     GetByteIncY   
 

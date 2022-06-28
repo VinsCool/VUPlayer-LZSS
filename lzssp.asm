@@ -1,10 +1,11 @@
 ;* Assemble from this file!
 ;* Include everything needed below
 
-	OPT R+ F-
+	OPT R- F-
 	icl "atari.def"
 		
 BUILD_VUPLAYER	equ 1			; Build the full VUPlayer, else it will be excluded, useful for including the driver in different projects
+LZSS_SAP	equ 0			; Build the driver with SAP format in mind
 
 ;//---------------------------------------------------------------------------------------------
 
@@ -18,6 +19,9 @@ VUDATA 		equ $2C00		; Text and data used by VUPlayer
 	EIF
 	
 SONGINDEX	equ $3000		; Songs index, alligned memory for easier insertion from RMT
+	IFT LZSS_SAP
+SAPINDEX	equ $3080		; Allows running from SAP Type B container	
+	EIF
 SONGDATA	equ $3100		; Songs data, alligned memory for easier insertion from RMT
 
 ;//---------------------------------------------------------------------------------------------
@@ -55,6 +59,7 @@ begin_fadeout
 	sta last_second_seen	; initialise the timer for fadeout
 continue_fadeout	
 	ldy #7			; index from the 4th AUDC 
+
 fade_volume_loop_a
 	lda SDWPOK0,y		; current POKEY buffer
 	tax			; backup for the next step
@@ -75,6 +80,33 @@ volume_loop_again
 	sta SDWPOK0,y		; write the new AUDC value in memory for later
 	:2 dey			; decrement twice to only load the AUDC
 	bpl fade_volume_loop_a	; continue this loop until Y overflows to $FF 
+
+	lda is_stereo_flag	; is it a Stereo setup?
+	beq fade_volume_mono	; 0 == Mono
+	ldy #7			; index from the 4th AUDC (Right POKEY)
+	
+fade_volume_loop_b
+	lda SDWPOK1,y		; current POKEY buffer
+	tax			; backup for the next step
+	and #$0F		; keep only the volume values
+	sec			; set carry for the subtraction
+	sbc is_fadeing_out	; subtract the fading value directly
+	beq volume_loop_again_a	; if value = 0, write that value directly
+	bpl set_new_volume_a	; else if the subtraction did not overflow, continue with the next step
+	lda #0			; else, set the volume to 0 
+	beq volume_loop_again_a	; unconditional 
+set_new_volume_a	
+	sta ora_volume_a	; this value will be used for the ORA instruction 
+	txa			; get back the AUDC value loaded a moment before
+	and #$F0		; only keep the Distortion bits
+	ora #0			; combine the new volume to it
+	ora_volume_a equ *-1
+volume_loop_again_a
+	sta SDWPOK1,y		; write the new AUDC value in memory for later
+	:2 dey			; decrement twice to only load the AUDC
+	bpl fade_volume_loop_b	; continue this loop until Y overflows to $FF
+
+fade_volume_mono
 	lda v_second		; current second count
 	cmp #0			; compare to the last second loaded 
 	last_second_seen equ *-1
@@ -320,9 +352,10 @@ stop_pause_reset
 	ldy #8
 stop_pause_reset_a 
 	sta SDWPOK0,y		; clear the POKEY values in memory
+	sta SDWPOK1,y
 	dey 
 	bpl stop_pause_reset_a	; repeat until all channels were cleared 
-	jsr setpokeyfull	; overwrite the actual registers, including SKCTL, just in case
+	jsr setpokeyfull	; overwrite the actual registers
 	rts
 
 ;----------------- 
@@ -334,9 +367,10 @@ stop_pause_mute
 	ldy #7			; begin on the last channel's AUDC
 stop_pause_mute_a 
 	sta SDWPOK0,y		; clear the AUDC values ONLY
+	sta SDWPOK1,y
 	:2 dey 			; DEY twice to avoid the AUDF values
 	bpl stop_pause_mute_a	; repeat until all channels were cleared 
-	jsr setpokeyfast	; overwrite the actual registers
+	jsr setpokeyfull	; overwrite the actual registers
 	rts
 
 ;----------------- 
@@ -351,9 +385,29 @@ reset_timer
 	
 ;-----------------
 
+; Check the Volume Only bit in CH1, if set but below the $Fx range, it's used, else, it's proper Volume Only output
+
+CheckForTwoToneBit
+	ldy #3			; default SKCTL register state
+	ldx POKC0		; AUDC1
+	cpx #$F0		; is the tune expected to run with Proper Volume Only output?
+	bcs NoTwoTone		; if equal or above, this is not used for Two-Tone, don't set it
+	txa
+	and #$10		; test the Volume Only bit
+	beq NoTwoTone		; if it is not set, there is no Two-Tone Filter active
+	txa
+	eor #$10		; reverse the Volume Only bit
+	sta POKC0		; overwrite the AUDC
+	ldy #$8B		; set the Two-Tone Filter output
+NoTwoTone
+	sty POKSKC0		; overwrite the buffered SKCTL byte with the new value
+	rts
+
+;-----------------
+
 ; fast setpokey variant, intended for double buffering the decompressed LZSS bytes as fast as possible for timing and cosmetic purpose
 
-SDWPOK0
+SDWPOK0			;* Left POKEY
 POKF0	dta $00
 POKC0	dta $00
 POKF1	dta $00
@@ -363,12 +417,25 @@ POKC2	dta $00
 POKF3	dta $00
 POKC3	dta $00
 POKCTL0	dta $00
-POKSKC0	dta $03		; SKCTL, currently not used by the LZSS driver...
+POKSKC0	dta $03	
+
+SDWPOK1			;* Right POKEY
+POKF4	dta $00
+POKC4	dta $00
+POKF5	dta $00
+POKC5	dta $00
+POKF6	dta $00
+POKC6	dta $00
+POKF7	dta $00
+POKC7	dta $00
+POKCTL1	dta $00
+POKSKC1	dta $03
+
+;* Left POKEY is used by default, unless a Stereo setup is used, which will also write bytes to the Right POKEY 
 
 setpokeyfull
-	lda POKSKC0	; SKCTL initialisation is never done from the LZSS driver, so let's do it manually here
-	sta $D20F	; SKCTL, currently not used by the LZSS driver...
-setpokeyfast
+	lda POKSKC0 
+	sta $D20F 
 	ldy POKCTL0
 	lda POKF0
 	ldx POKC0
@@ -387,6 +454,46 @@ setpokeyfast
 	sta $D206
 	stx $D207
 	sty $D208
+	
+	lda #STEREO			; 0 == Mono, FF == Stereo, 1 == Dual Mono (only SwapBuffer is necessary for it) 
+	is_stereo_flag equ *-1
+	bne setpokeyfullstereo
+	rts
+
+setpokeyfullstereo
+	lda POKSKC1 
+	sta $D21F 
+	ldy POKCTL1
+	lda POKF4
+	ldx POKC4
+	sta $D210
+	stx $D211
+	lda POKF5
+	ldx POKC5
+	sta $D212
+	stx $D213
+	lda POKF6
+	ldx POKC6
+	sta $D214
+	stx $D215
+	lda POKF7
+	ldx POKC7
+	sta $D216
+	stx $D217
+	sty $D218
+	rts
+
+;-----------------
+
+;* Swap POKEY buffers for Stereo Playback, this is a really dumb hack but that saves the troubles of touching the unrolled LZSS driver's code
+
+SwapBuffer
+	ldy #9
+SwapBufferLoop
+	lda SDWPOK0,y
+	sta SDWPOK1,y
+	dey
+	bpl SwapBufferLoop
 	rts
 
 ;-----------------
@@ -544,6 +651,12 @@ loop_again
 
 		org SONGINDEX	
 		icl "SongIndex.asm"
+		
+		IFT LZSS_SAP
+		org SAPINDEX
+		icl "LZSS_SAP.asm"
+		EIF
+		
 		org SONGDATA 
 		icl "SongData.asm"
 

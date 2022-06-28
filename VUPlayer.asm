@@ -19,9 +19,9 @@ SongSpeed	equ 1		; 1 => 50/60hz, 2 => 100/120hz, etc
 
 REGIONPLAYBACK	equ 1		; 0 => PAL, 1 => NTSC
 
-; currently, Stereo is not supported with the LZSS driver...
+; Stereo is now supported with the LZSS driver!
 
-;	STEREO	equ 0		; 0 => MONO, 1 => STEREO, 2 => DUAL MONO
+STEREO		equ 255		; 0 => MONO, 255 => STEREO, 1 => DUAL MONO
 
 ; screen line for synchronization, important to set with a good value to get smooth execution
 
@@ -236,7 +236,6 @@ acpapx2	equ *-1
 check_play_flag	
 	lda is_playing_flag 		; 0 -> is playing, else it is either stopped or paused, and must not run into rmtplay again 
 	bne loop			; otherwise, the player is either paused or stopped, in this case, nothing will happen until it is changed back to 0
-
 	lda #0				; lda #$80 to display the rasterbar by default, 0 sets it hidden otherwise 
 	rasterbar_toggler equ *-1
 	bpl do_play			; a positive value means the rasterbar is not displayed 
@@ -244,9 +243,20 @@ check_play_flag
 	sty COLPF2			; playfield colour 2
 	
 do_play 
-	jsr setpokeyfast		; VUPlayer's variant of the subroutine
+	jsr setpokeyfull		; VUPlayer's variant of the subroutine, Stereo is handled automatically through a flag inside the subroutine itself
 	jsr LZSSPlayFrame		; Play 1 LZSS frame
-	jsr LZSSUpdatePokeyRegisters	; double buffer to let setpokeyfast match the RMT timing
+	jsr LZSSUpdatePokeyRegisters	; buffer to let setpokeyfast match the RMT timing
+	jsr CheckForTwoToneBit		; if set, the Two-Tone Filter will be enabled 
+	
+	lda is_stereo_flag		; FF == Stereo
+	beq finish_loop_code		; 0 == Mono
+;	bpl only_swap_buffer		; 1 == Dual Mono, unfinished 
+
+do_double_buffer			
+	jsr SwapBuffer			; dumb ass Stereo hack but hey if it works who the fuck cares
+	jsr LZSSPlayFrame		; Play 1 LZSS frame (again) 
+	jsr LZSSUpdatePokeyRegisters	; buffer to let setpokeyfast match the RMT timing (again) 
+	jsr CheckForTwoToneBit		; if set, the Two-Tone Filter will be enabled (again) 
 
 finish_loop_code
 	jsr fade_volume_loop		; run the fadeing out code from here until it's finished
@@ -272,7 +282,14 @@ finish_loop_code_a
 	ldy #0				; black colour value
 	sty COLBK			; background colour
 	sty COLPF2			; playfield colour 2 
+	
+	IFT LZSS_SAP
+	rts
+	nop
+	nop
+	ELS
 	jmp loop			; infinitely
+	EIF
 
 ;-----------------
 
@@ -596,20 +613,7 @@ set_subtune_count_d
 	
 ;-----------------
 
-; stop and quit
 
-stopmusic 
-	jsr stop_pause_reset 
-	mwa oldvbi VVBLKI	; restore the old vbi address
-	ldx #$00		; disable playfield 
-	stx SDMCTL		; write to Direct Memory Access (DMA) Control register
-	dex			; underflow to #$FF
-	stx CH			; write to the CH register, #$FF means no key pressed
-	cli			; this may be why it seems to crash on hardware... I forgot to clear the interrupt bit!
-	jsr wait_vblank		; wait for vblank before continuing
-	jmp (DOSVEC)		; return to DOS, or Self Test by default
-
-;----------------- 
 
 ;* menu input handler subroutine, all jumps will end on a RTS, and return to the 'set held key flag' execution 
 
@@ -639,6 +643,8 @@ b_6	jmp stopmusic 		; #6 => eject
 ;* check all keys that have a purpose here... 
 ;* this is the world's most cursed jumptable ever created!
 ;* regardless, this finally gets rid of all the spaghetti code I made previously!
+
+;	:3 nop
 
 check_keys
 	cpy #64				; within the valid range of key input?
@@ -835,6 +841,21 @@ display_help
 	rts
 
 ;-----------------
+
+; stop and quit
+
+stopmusic 
+	jsr stop_pause_reset 
+	mwa oldvbi VVBLKI	; restore the old vbi address
+	ldx #$00		; disable playfield 
+	stx SDMCTL		; write to Direct Memory Access (DMA) Control register
+	dex			; underflow to #$FF
+	stx CH			; write to the CH register, #$FF means no key pressed
+	cli			; this may be why it seems to crash on hardware... I forgot to clear the interrupt bit!
+	jsr wait_vblank		; wait for vblank before continuing
+	jmp (DOSVEC)		; return to DOS, or Self Test by default
+
+;----------------- 
 
 ;* menu buttons highlight subroutine
 
