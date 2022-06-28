@@ -1,5 +1,5 @@
 ;************************************************;
-;* VUPlayer, Version v0.3 WIP                   *;
+;* VUPlayer, Version v1.0                       *;
 ;* by VinsCool, 2022                            *;
 ;* This project branched from Simple RMT Player *;
 ;* And has then become its own thing...         *;
