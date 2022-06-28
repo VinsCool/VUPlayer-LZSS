@@ -111,7 +111,7 @@ line_5	dta d"Line 5 (SHIFT is being held right now)  "
 ; version and credit
 
 line_6	;dta d"VUPlayer + LZSS by VinsCool         "
-	dta d"VUPlayerLZSS by VinsCool            "
+	dta d"VUPlayer-LZSS by VinsCool           "
 	dta d"v1.0"* 
 	
 ; Display list
