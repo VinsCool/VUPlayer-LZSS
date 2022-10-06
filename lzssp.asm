@@ -539,10 +539,10 @@ notimetolose
 	IFT BUILD_VUPLAYER
 	org VUPLAYER
 	icl "VUPlayer.asm"
-	org FONT 
-	ins "font.fnt" 			
+	org FONT
+	ins "font.fnt"
 	org VUDATA
-	icl "VUData.asm"	
+	icl "VUData.asm"
 	run start		; set run address to VUPlayer in this case
 	ELS
 
