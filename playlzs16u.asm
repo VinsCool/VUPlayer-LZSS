@@ -48,11 +48,11 @@ DLIDstBufOffset     .byte   0
 DecodeBufferBytes
     ; We are decoding a new match/literal
     lsr     ZPLZS.bit_data    ; Get next bit
-    bne     @got_bit
+    bne     got_bit
     GetByteIncY         ; Not enough bits, refill!
     ror                 ; Extract a new bit and add a 1 at the high bit (from C set above)
     sta     ZPLZS.bit_data
-@got_bit:
+got_bit:
     GetByteIncY         ; Always read a byte, it could mean "match size/offset" or "literal byte"
     rts
 
@@ -98,9 +98,9 @@ UpdateLZSPtr
 	clc
 	adc	ZPLZS.SongPtr
 	sta	ZPLZS.SongPtr
-	bcc @NoI
+	bcc NoI
 	inc	ZPLZS.SongPtr+1
-@NoI	
+NoI	
 	rts
 
 ;//##########################################################################
@@ -150,27 +150,27 @@ LZSSReset
     sta     DecodeChannel8.SMSet_CMP+1
 
     lda     #.HI(LZSSBuffers+$100*8)
-    sta     @SMSet_LZSSBuf+2
+    sta     SMSet_LZSSBuf+2
 
     ldx #9-1
     
-@SetFirstFrame 
+SetFirstFrame 
     GetByteIncY   
 
     lsr     LZS.chn_bits
-    bcc     @DontSetPokey
+    bcc     DontSetPokey
     
 ;	sta     POKEY,x                 ;// channel was not compressed, write to Pokey just once
     sta SDWPOK0,x			;// edit by VinsCool: write to POKEY buffer for VUPlayer's timing and VUMeter display
     
-    bcs     @DontSetBuffer
-@DontSetPokey    
-@SMSet_LZSSBuf    
+    bcs     DontSetBuffer
+DontSetPokey    
+SMSet_LZSSBuf    
     sta     LZSSBuffers+$100*8+255    ;// channel was compressed, write first value at offset 255
-@DontSetBuffer    
-    dec     @SMSet_LZSSBuf+2        ;// next buffer
+DontSetBuffer    
+    dec     SMSet_LZSSBuf+2        ;// next buffer
     dex 
-    bpl     @SetFirstFrame
+    bpl     SetFirstFrame
     
     //--- update src stream ptr
 	jsr     UpdateLZSPtr
@@ -198,10 +198,10 @@ SMSet_chn_bitsInit
 NextChannel
     lda     #$8D    ;// STA ABS
     asl     LZS.chn_bits
-    bcc     @WriteChannel
+    bcc     WriteChannel
     lda     #$AD    ;// LDA ABS     ;// change the write to pokey to a read 
     clc
-@WriteChannel
+WriteChannel
     sta     SMSet_WritePokey0,y
 
     tya
@@ -241,15 +241,15 @@ LZSSPlayFrames:
     ldx     SongSpeed
 
 	lda		LZS.Initialized
-	bne		@Initialized
+	bne		Initialized
     //--- (re)init song 
     jsr     LZSSReset
     //--- have multiple pokey frames to play ?
     ldx     SongSpeed
     dex
-    bne     @Initialized
+    bne     Initialized
     rts
-@Initialized
+Initialized
 
 
 LZSSPlay1Frame
@@ -282,9 +282,9 @@ LblDecodeChannel7
 SMSet_PlayCounter
     ldx     #$ff
     dex
-    beq     @NoMoreFrame
+    beq     NoMoreFrame
     jmp     LZSSPlay1Frame
-@NoMoreFrame
+NoMoreFrame
     rts
 
 ;//##########################################################################
@@ -294,11 +294,11 @@ LZSSCheckEndOfSong
     //--- check end of song
     lda     ZPLZS.SongPtr + 1
     cmp     LZS.SongEndPtr+1
-    bne     @NotEnd
+    bne     NotEnd
     lda     ZPLZS.SongPtr
     cmp     LZS.SongEndPtr
-    bne     @NotEnd
-@NotEnd    
+    bne     NotEnd
+NotEnd    
     rts
 
 ;//##########################################################################
