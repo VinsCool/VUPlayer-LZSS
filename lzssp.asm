@@ -19,9 +19,7 @@ VUDATA 		equ $2C00		; Text and data used by VUPlayer
 	EIF
 	
 SONGINDEX	equ $3000		; Songs index, alligned memory for easier insertion from RMT
-	IFT LZSS_SAP
 SAPINDEX	equ $3080		; Allows running from SAP Type B container	
-	EIF
 SONGDATA	equ $3100		; Songs data, alligned memory for easier insertion from RMT
 
 ;//---------------------------------------------------------------------------------------------
@@ -539,10 +537,10 @@ notimetolose
 	IFT BUILD_VUPLAYER
 	org VUPLAYER
 	icl "VUPlayer.asm"
-	org FONT 
-	ins "font.fnt" 			
+	org FONT
+	ins "font.fnt"
 	org VUDATA
-	icl "VUData.asm"	
+	icl "VUData.asm"
 	run start		; set run address to VUPlayer in this case
 	ELS
 

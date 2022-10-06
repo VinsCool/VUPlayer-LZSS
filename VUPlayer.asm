@@ -67,8 +67,10 @@ region_loop
 check_region
 	stx region_byte		; will define the region text to print later
 	ldy #SongSpeed		; defined speed value, which may be overwritten by RMT as well
+PLAYER_SONG_SPEED equ *-1
 	sty instrspeed		; will be re-used later as well for the xVBI speed value printed
 	IFT REGIONPLAYBACK==0	; if the player region defined for PAL...
+PLAYER_REGION_INIT equ *	
 	lda tabppPAL-1,y
 	sta acpapx2		; lines between each play
 	cpx #$9B		; compare X to 155
@@ -78,6 +80,7 @@ check_region
 set_ntsc
 	lda tabppNTSCfix-1,y	; if NTSC is detected, adjust the speed from PAL to NTSC
 	ELI REGIONPLAYBACK==1	; else, if the player region defined for NTSC...
+PLAYER_REGION_INIT equ *	
 	lda tabppNTSC-1,y
 	sta acpapx2		; lines between each play
 	cpx #$9B		; compare X to 155	
@@ -282,7 +285,8 @@ finish_loop_code_a
 	ldy #0				; black colour value
 	sty COLBK			; background colour
 	sty COLPF2			; playfield colour 2 
-	
+
+VU_PLAYER_RTS_NOP equ *	
 	IFT LZSS_SAP
 	rts
 	nop
@@ -598,6 +602,7 @@ set_subtune_count_b
 	lda rasterbar_colour
 	clc
 	adc #16
+PLAYER_SHUFFLE equ *-1	
 	sta rasterbar_colour
 set_subtune_count_c
 	lda SongTotal		; index total from LZSSP, this won't change once it was set, except during the initialisation

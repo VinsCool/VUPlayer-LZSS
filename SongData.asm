@@ -15,7 +15,8 @@ S_DUMMY
 ;* Looped subtunes index, if a dummy is inserted, the tune has a definite end and won't loop and/or fadeout!
 
 L_Id_0
-	ins	'/RANDOM3/Lab Stereo.lzss' 
+	;ins	'/RetroCoder/lzss.new.lzss' 
+	ins 'DUMMY.lzss'
 	
 ;----------------------	
 
