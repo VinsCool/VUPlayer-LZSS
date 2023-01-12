@@ -3,7 +3,8 @@
 ;* IMPORTANT: due to technical reasons, every indexes MUST end with a dummy subtune! Otherwise the entire thing will break apart!
 
 S_Id_0
-	ins	'DUMMY.lzss'
+	;ins	'DUMMY.lzss'
+	ins	'/MM2/18 - WILY_STAGE_12.lzss'
 
 ;----------------------	
 
@@ -16,7 +17,8 @@ S_DUMMY
 
 L_Id_0
 	;ins	'/RetroCoder/lzss.new.lzss' 
-	ins 'DUMMY.lzss'
+	;ins 'DUMMY.lzss'
+	ins	'/MM2/18 - WILY_STAGE_12_LOOP.lzss'
 	
 ;----------------------	
 
