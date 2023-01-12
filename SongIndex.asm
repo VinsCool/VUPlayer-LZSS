@@ -2,11 +2,9 @@
 ;* Index list must end with the dummy tune address to mark the end of each list properly 
 ;* Make sure to define the total number of tunes that could be indexed in code using it to avoid garbage data being loaded 
 
+	.align $40
+
 SongIndex 
-/*
-	dta a(SNG_0),a(SEQ_0) 
-	dta a(SNG_1),a(SEQ_1) 
-*/
 	dta a(SNG_0),a(SEQ_0) 
 	dta a(SNG_1),a(SEQ_0) 
 	dta a(SNG_2),a(SEQ_0) 
@@ -21,9 +19,10 @@ SongIndexEnd
 		
 ;//---------------------------------------------------------------------------------------------
 
+	.align $40
+	
 SongSequence
 SEQ_0	dta $00,$01,$81
-;SEQ_0	dta $00,$01,$02,$03,$04,$05,$06,$07,$08,$09,$82
 SEQ_1	dta $00,$80
 SongSequenceEnd 
 
@@ -31,20 +30,10 @@ SongSequenceEnd
 		
 ;//---------------------------------------------------------------------------------------------
 
+	.align $40
+	
 SongSection
 SNG_0	dta a(LZ00)
-/*
-	dta a(LZ01)
-	dta a(LZ02)
-	dta a(LZ03)
-	dta a(LZ04)
-	dta a(LZ05)
-	dta a(LZ06)
-	dta a(LZ07)
-	dta a(LZ08)
-	dta a(LZ09)
-SNG_1	dta a(LZ10)
-*/
 	dta a(LZ01)
 SNG_1	dta a(LZ10)
 	dta a(LZ11)
@@ -56,7 +45,6 @@ SNG_5	dta a(LZ50)
 SNG_6	dta a(LZ60)
 SNG_7	dta a(LZ70)
 	dta a(LZ71)
-*/
 SNG_END	dta a(LZ_END) 
 SongSectionEnd 
 
@@ -65,21 +53,9 @@ SongSectionEnd
 ;//---------------------------------------------------------------------------------------------
 
 ;* LZSS data, all in a single block
-
+	
+	.align $40
 LZ_DTA
-/*
-LZ00	ins '/RANDOM3/lab.lz00'
-LZ01	ins '/RANDOM3/lab.lz01'
-LZ02	ins '/RANDOM3/lab.lz02'
-LZ03	ins '/RANDOM3/lab.lz03'
-LZ04	ins '/RANDOM3/lab.lz04'
-LZ05	ins '/RANDOM3/lab.lz05'
-LZ06	ins '/RANDOM3/lab.lz06'
-LZ07	ins '/RANDOM3/lab.lz07'
-LZ08	ins '/RANDOM3/lab.lz08'
-LZ09	ins '/RANDOM3/lab.lz09'
-LZ10	ins '/RANDOM3/Gordian Tomb Stereo.lzss'
-*/
 LZ00	ins '/RANDOM3/SKETCH_53.lzss'
 LZ01	ins '/RANDOM3/SKETCH_53_LOOP.lzss'
 LZ10	ins '/RANDOM3/SIEUR_GOUPIL.lzss'
