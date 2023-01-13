@@ -112,7 +112,7 @@ SetNewSongPtrs_c
 
 SetNewSongPtrsDone
 	lda #0
-	sta LZS.Initialized		; reset the state of the LZSS driver to not initialised so it can play the next tune or loop 
+	sta LZS.Initialized	; reset the state of the LZSS driver to not initialised so it can play the next tune or loop 
 	rts 	
 
 ;-----------------
@@ -252,7 +252,9 @@ setpokeyfullstereo
 
 ;-----------------
 
-; Toggle Play/Pause 
+;* Toggle Play/Pause, and mute all channels, but do not overwrite the AUDF or AUDCTL registers, so they can be used right back
+;* Otherwise, as soon as it's set back to Play from Pause, some junk data might stick in memory, and wouldn't be properly updated
+;* It turns out, the idea from a few months ago actually worked well enough to counter this situation, so let's just use it again
 
 play_pause_toggle 
 	lda #0
@@ -265,9 +267,17 @@ set_play
 	rts
 set_pause 
 	inc is_playing_flag		; #0 -> #1 -> Pause 
-	jmp stop_pause_reset		; clear the POKEY registers, end with a RTS
-	
-;-----------------
+stop_pause_mute
+	lda #0				; default values
+	ldy #7				; begin on the last channel's AUDC
+stop_pause_mute_a 
+	sta SDWPOK0,y			; clear the AUDC values ONLY
+	sta SDWPOK1,y			; same for the Right POKEY 
+	:2 dey 				; DEY twice to avoid the AUDF values here
+	bpl stop_pause_mute_a		; repeat until all channels were cleared 
+	jmp setpokeyfull		; overwrite the actual registers, end with a RTS
+
+;----------------- 
 
 ;* This routine provides the ability to initialise a fadeout for anything that may require a transition in a game/demo 
 ;* At the end of the routine, the is_playing flag will be set to a 'stop', which will indicate the fadeout has been completed
@@ -357,6 +367,10 @@ SetTwoTone
 
 ;* Swap POKEY buffers for Stereo Playback
 ;* This is a really dumb hack that shouldn't harm the LZSS driver if everything works as expected... 
+;* BUG: Just changing the POKEY pointers doesn't cut it, missing registers writes will occur in Stereo!
+;* It looks like the original ideas of "Copying over before overwriting" worked better, after all...
+;* A workaround is to only copy the buffer once, then offset the Volume Fadeout addresses
+;* That way, both the swapped registers and fadeout routine get the data as intended, sort of...
 
 SwapBuffer
 	lda #<SDWPOK1
@@ -367,15 +381,14 @@ SwapBufferReset
 	lda #<SDWPOK0
 SwapBufferSet
 	sta buffset
-	sta buffstore
+;	sta buffstore
 	sta bufffade1 
 	sta bufffade2 
-	sta bufftwo
-	sta bufftone
-	sta buffbit
+;	sta bufftwo
+;	sta bufftone
+;	sta buffbit
 SwapBufferDone
 	rts
-	
 SwapBufferCopy
 	ldy #9
 SwapBufferLoop

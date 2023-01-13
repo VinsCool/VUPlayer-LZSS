@@ -154,6 +154,8 @@ is_DONE
 no_dma
 	sta dma_flag		; will allow skipping drawing the screen if it was not enabled!
 	ldx #120		; load into index x a 120 frames buffer
+	jsr wait_vblank		; wait for vblank => 1 frame
+	mva #>FONT CHBASE
 	mwa #deli VDSLST	
 	mva #$C0 NMIEN		; enable vbi and dli interrupts
 wait_init   
@@ -223,9 +225,14 @@ do_play
 	jsr SwapBufferCopy		; Dual Mono detected -> copy the Left POKEY to Right POKEY directly
 	bmi dont_swap			; Unconditional, the subroutine return with the value of $FF in Y 
 do_swap	
-	jsr SwapBuffer 			; swap the POKEY memory addresses for Stereo playback 
+	jsr SwapBufferCopy 		; copy over the register values, since this will be overwritten
+	jsr LZSSCheckEndOfSong		; is the current LZSS index done playing? This might help catch the pointer overshooting it
+	bne catch_a_loop		; if it did not yet reach the end, carry on, nothing to worry about here
+	jsr SetNewSongPtrs		; in case it went out of bounds, this should prevent garbage data from playing back
+catch_a_loop
 	jsr LZSSPlayFrame		; Play 1 LZSS frame (for Right POKEY) 
 	jsr CheckForTwoToneBit		; check for Two-Tone again too
+	jsr SwapBuffer			; swap the POKEY memory addresses for Stereo compatibility during a fadeout
 	jsr fade_volume_loop		; hah! got ya with this one running first this time, again for the same purpose
 	jsr SwapBuffer			; revert to the original memory addresses for the next frame
 dont_swap
@@ -570,9 +577,9 @@ k_index	bne *
 	rts:nop
 	bcc do_toggle_rasterbar 	; Y = 33 -> 'Spacebar' key
 	rts:nop
+	bcc do_toggle_dli		; Y = 35 -> 'N' key
 	rts:nop
-	rts:nop
-	rts:nop
+	bcc do_toggle_pokey_mode	; Y = 37 -> 'M' key
 	rts:nop
 	rts:nop
 	bcc do_toggle_vumeter		; Y = 40 -> 'R' key
@@ -583,9 +590,9 @@ k_index	bne *
 	rts:nop
 	bcc do_scroll_up		; Y = 46 -> 'W' key
 	rts:nop
+	bcc do_set_speed_down		; Y = 48 -> '9' key
 	rts:nop
-	rts:nop
-	rts:nop
+	bcc do_set_speed_up		; Y = 50 -> '0' key
 	bcc do_lastpap_reverse		; Y = 51 -> '7' key
 	rts:nop
 	bcc do_lastpap_forward		; Y = 53 -> '8' key
@@ -641,6 +648,14 @@ do_stop_toggle
 	lda #0
 	sta stop_on_fade_end
 	jmp stop_toggle
+do_toggle_dli
+	jmp toggle_dli
+do_toggle_pokey_mode
+	jmp toggle_pokey_mode
+do_set_speed_down
+	jmp set_speed_down
+do_set_speed_up
+	jmp set_speed_up
 	
 ;----------------- 
 
@@ -712,6 +727,38 @@ fast_forward3
 	
 ;-----------------
 
+set_speed_up
+	ldy PLAYER_SONG_SPEED
+	iny
+	cpy #17
+	bcc set_speed_next
+	ldy #0
+	beq set_speed_next
+set_speed_down
+	ldy PLAYER_SONG_SPEED
+	dey 
+	bpl set_speed_next
+	ldy #16
+set_speed_next	
+	sty PLAYER_SONG_SPEED
+	lda region_byte
+	cmp #$9B 
+	bmi set_speed_ntsc
+set_speed_pal
+	lda tabppPAL-1,y
+	sta acpapx2
+	lda tabppPALfix-1,y
+	sta ppap
+	rts	
+set_speed_ntsc
+	lda tabppNTSC-1,y
+	sta acpapx2
+	lda tabppNTSCfix-1,y
+	sta ppap
+	rts
+
+;-----------------
+
 toggle_vumeter
 	lda scroll_buffer
 	bne no_toggle_interrupt
@@ -759,6 +806,40 @@ display_help
 	sta mode2_toggle
 	lda >help_0
 	sta mode2_toggle+1
+	rts
+
+;-----------------
+
+toggle_pokey_mode
+	ldx is_stereo_flag
+	beq toggle_dual_mono
+	bpl toggle_stereo
+toggle_mono
+	lda #0
+	ldx #8
+toggle_mono_loop
+	sta SDWPOK1,x			; clear the Right POKEY before switching back to Mono
+	dex 
+	bpl toggle_mono_loop 
+	jsr setpokeyfullstereo		; apply the changes immediately to avoid any garbage data left in memory 
+	beq toggle_pokey_mode_done 	; unconditional, all registers were set to 0 there :D
+toggle_dual_mono
+	inx 
+	bpl toggle_pokey_mode_done
+toggle_stereo
+	ldx #$FF
+toggle_pokey_mode_done
+	stx is_stereo_flag
+	rts
+
+;-----------------
+
+toggle_dli
+	lda #$C0 
+	dli_toggler equ *-1
+	eor #$80
+	sta dli_toggler
+	sta NMIEN
 	rts
 
 ;-----------------
@@ -1122,9 +1203,11 @@ decay_done
 
 ;	    x1  x2  x3  x4  x5  x6  x7  x8  x9  x10 x11 x12 x13 x14 x15 x16 
 
+	dta $EA
 tabppPAL	; "optimal" PAL timing table
 	dta $9C,$4E,$34,$27,$20,$1A,$17,$14,$12,$10,$0F,$0D,$0C,$0C,$0B,$0A
 	
+	dta $9C
 tabppPALfix	; interval offsets for timing stability 
 	dta $9C,$9C,$9C,$9C,$A0,$9C,$A1,$A0,$A2,$A0,$A5,$9C,$9C,$A8,$A5,$A0
 	
@@ -1137,9 +1220,11 @@ tabppPALfix	; interval offsets for timing stability
 
 ;	    x1  x2  x3  x4  x5  x6  x7  x8  x9  x10 x11 x12 x13 x14 x15 x16 
 	
+	dta $FC
 tabppNTSC	; "optimal" NTSC timing table
 	dta $82,$41,$2B,$20,$1A,$15,$12,$10,$0E,$0D,$0B,$0A,$0A,$09,$08,$08
-
+	
+	dta $7E
 tabppNTSCfix	; interval offsets for timing stability 
 	dta $82,$82,$81,$80,$82,$7E,$7E,$80,$7E,$82,$79,$78,$82,$7E,$78,$80
 

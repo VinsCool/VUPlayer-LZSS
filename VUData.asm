@@ -109,7 +109,7 @@ line_5	dta d"Line 5 (SHIFT is being held right now)  "
 
 line_6
 	dta d"VUPlayer-LZSS by VinsCool           "
-	dta d"v1.1"* 
+	dta d"v1.2"* 
 	
 ; Display list
 

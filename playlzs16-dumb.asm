@@ -30,19 +30,18 @@ buffers
 .LOCAL LZS
 chn_copy	.ds     9
 chn_pos		.ds     9
-;bptr		.ds     2
 SongStartPtr	.ds     2
 SongEndPtr	.ds     2
-;song_ptr	.ds	2
 cur_pos		.ds     1
 chn_bitsInit	.ds     1
 chn_bits	.ds     1
 ptr_offset	.ds	1
-;bit_data	.byte   1
 Initialized	.byte   0
 .ENDL
 
 //////////////////////////////////
+
+PLAYLZ16BEGIN
 
 ;* Check for ending of song and jump to the next frame
 
