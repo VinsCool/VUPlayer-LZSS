@@ -16,6 +16,7 @@
 .def COLOR3			= $02C7
 .def COLOR4			= $02C8
 .def CH1			= $02F2
+.def CHBAS 			= $02F4
 .def CH				= $02FC
 
 .def HPOSP0          		= $D000	; HORIZONTAL POSITION P0

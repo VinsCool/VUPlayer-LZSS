@@ -1,5 +1,5 @@
 ;************************************************;
-;* VUPlayer, Version v1.1                       *;
+;* VUPlayer, Version v2.0                       *;
 ;* by VinsCool, 2022-2023                       *;
 ;* This project branched from Simple RMT Player *;
 ;* And has then become its own thing...         *;
@@ -25,16 +25,15 @@ STEREO		equ 0		; 0 => MONO, 255 => STEREO, 1 => DUAL MONO
 
 ; screen line for synchronization, important to set with a good value to get smooth execution
 
-VLINE		equ 16		; nice round numbers fit well with multiples of 8 for every xVBI...
+VLINE		equ 20		; nice round numbers fit well with multiples of 8 for every xVBI...
 		ERT VLINE>155	; VLINE cannot be higher than 155!
 
 ; rasterbar colour
 
 RASTERBAR	equ $69		; $69 is a nice purpleish hue
 
-; VU Meter decay rate and speed
+; VU Meter decay speed
 
-RATE		equ 1		; set the amount of volume decay is done, 0 is no decay, 15 is instant
 SPEED		equ 1		; set the speed of decay rate, 0 is no decay, 255 is the highest amount of delay (in frames) 
 
 ;* Subtune index number is offset by 1, meaning the subtune 0 would be subtune 1 visually
@@ -53,7 +52,10 @@ start
 	jsr wait_vblank		; wait for vblank before continuing
 	stx COLOR4		; Shadow COLBK (background colour), black
 	stx COLOR2		; Shadow COLPF2 (playfield colour 2), black
+	dex
+	stx COLOR1
 	mwa #dlist SDLSTL	; Start Address of the Display List
+	mva #>FONT CHBAS     	; load the font address into the shadow character register
 region_loop	
 	lda VCOUNT
 	beq check_region	; vcount = 0, go to check_region and compare values
@@ -107,43 +109,29 @@ region_done
 	cmp #$9B
 	bmi is_NTSC
 is_PAL				; VUMeter colours, adjusted for PAL 
-	lda #$2A
-	sta COLOR3
-	and #$F0
-	sta col3bak
-	lda #$BF
-	sta COLOR1
-	and #$F0
-	sta col1bak
-	lda #$DE
-	sta COLOR0
-	and #$F0
-	sta col0bak
+	lda #$20
+	sta col3bak		; Red
+	lda #$D0+1	
+	sta col2bak		; Yellow
+	lda #$B0-2
+	sta col1bak		; Green
 	ldx #50
 	mva:rne txt_PAL-1,y line_0-1,y-
 	beq is_DONE
 is_NTSC				; VUMeter colours, NTSC colours were originally used
-	lda #$4A
-	sta COLOR3
-	and #$F0
-	sta col3bak
-	lda #$DF
-	sta COLOR1
-	and #$F0
-	sta col1bak
-	lda #$1E
-	sta COLOR0
-	and #$F0
-	sta col0bak
+	lda #$40
+	sta col3bak		; Red
+	lda #$10+1	
+	sta col2bak		; Yellow
+	lda #$D0-2
+	sta col1bak		; Green
 	ldx #60
 	mva:rne txt_NTSC-1,y line_0-1,y-
-is_DONE				
-	sty v_second		; Y is 0, reset the timer with it
-	sty v_minute	
+is_DONE	
 	stx framecount		; X is either 50 or 60, defined by the region initialisation
 	stx v_frame		; also initialise the actual frame counter with this value
-	ldy #6			
-	sty VSCROL		; this will set the initial vertical position for the VU Meter/POKEY registers toggle scroll
+	sty v_second		; Y is 0, reset the timer with it
+	sty v_minute
 	jsr stop_toggle		; clear the POKEY registers, initialise the LZSS driver, and set VUPlayer to Stop
 	jsr set_subtune_count	; update the subtunes position and total values
 	lda SKSTAT		; Serial Port Status
@@ -155,12 +143,10 @@ no_dma
 	sta dma_flag		; will allow skipping drawing the screen if it was not enabled!
 	ldx #120		; load into index x a 120 frames buffer
 	jsr wait_vblank		; wait for vblank => 1 frame
-	mva #>FONT CHBASE
-	mwa #deli VDSLST	
+	mwa #deli VDSLST	; set our own dli address to jump to
 	mva #$C0 NMIEN		; enable vbi and dli interrupts
 wait_init   
 	jsr wait_vblank		; wait for vblank => 1 frame
-	mva #>FONT CHBASE     	; load the font address into the character register
 	dex			; decrement index x
 	bne wait_init		; repeat until x = 0, total wait time is ~2 seconds
 init_done
@@ -170,7 +156,8 @@ init_done
 wait_sync
 	lda VCOUNT		; current scanline 
 	cmp #VLINE		; will stabilise the timing if equal
-	bcc wait_sync		; nope, repeat
+	bne wait_sync		; nope, repeat
+	jsr toggle_vumeter	; make sure this is also set properly before playing
 	jsr play_pause_toggle	; now is the good time to set VUPlayer to Play
 
 ;-----------------
@@ -208,6 +195,7 @@ acpapx2	equ *-1
 	ldx #0
 	scs:inx
 	stx cku
+	sta WSYNC
 check_play_flag
 	lda is_playing_flag 		; 0 -> is playing, else it is either stopped or paused 
 	bne loop			; in this case, nothing will happen until it is changed back to 0 
@@ -215,10 +203,12 @@ check_play_flag
 	rasterbar_toggler equ *-1
 	bpl do_play
 	sty COLBK			; background colour 
+	sty lastbk
 do_play
 	jsr setpokeyfull		; update the POKEY registers first, for both the SFX and LZSS music driver 
 	jsr LZSSPlayFrame		; Play 1 LZSS frame
 	jsr CheckForTwoToneBit		; if set, the Two-Tone Filter will be enabled 
+	jsr set_progress_bar		; update the frames counter used by the progress bar for the current subtune 
 	lda is_stereo_flag		; What is the current setup?
 	beq dont_swap			; Mono detected -> do nothing 
 	bmi do_swap			; Stereo detected -> swap Left and Right POKEY pointers
@@ -253,6 +243,7 @@ do_play_next
 do_play_done
 	ldy #$00			; black colour value
 	sty COLBK			; background colour
+	sty lastbk
 VU_PLAYER_RTS_NOP equ *
 	jmp loop			; infinitely
 
@@ -263,7 +254,10 @@ VU_PLAYER_RTS_NOP equ *
 ;* VBI loop, run through all the code that is needed, then return with a RTI 
 
 vbi
-	sta WSYNC		; horizontal sync, so we're always on the exact same spot, seems to help with timing stability 
+;	sta WSYNC		; horizontal sync, so we're always on the exact same spot, seems to help with timing stability 
+	lda #0
+;	lda #56
+	sta COLBK
 	ldx <line_4		; line 4 of text
 	lda SKSTAT		; Serial Port Status
 	and #$08		; SHIFT key being held?
@@ -290,16 +284,18 @@ continue_b 			; a key was detected as held when jumped directly here
 	dma_flag equ *-1
 	beq continue_c		; if the value is 0, nothing will be drawn, else, continue with everything below
 	jsr test_vumeter_toggle	; process the VU Meter and POKEY registers display routines there
-	lda help_toggler	; there is nothing to display on that screen
-	bmi continue_c		; if negative, skip the next few routines since the display would not be visible	
 	jsr set_subtune_count	; update the subtune count on screen
 	jsr set_play_pause_stop_button
 	jsr set_highlight
-	jsr print_player_infos	; print most of the stuff on screen using printhex or printinfo in bulk (TODO: fix this shit) 
+	jsr print_player_infos	; print most of the stuff on screen using printhex or printinfo in bulk 
+	jsr draw_progress_bar	; draw the progress bar during playback, using frames counted during export
 continue_c	
 	jsr calculate_time 	; update the timer, this one is actually necessary, so even with DMA off, it will be executed 
 return_from_vbi			
-	sta WSYNC		; horizontal sync, this seems to make the timing more stable
+	lda #0
+	lastbk equ *-1
+	sta COLBK
+;	sta WSYNC		; horizontal sync, this seems to make the timing more stable
 	pla			;* since we're in our own vbi routine, pulling all values manually is required! 
 	tay
 	pla
@@ -317,21 +313,27 @@ deli
 	pha
 	tya
 	pha
+delistart
+	lda #0
+;	lda #$56
+	sta COLBK
+	lda #4
+	sta COLPF0		; Gray
 	ldx #3
-	delix1 equ *-1
 	ldy #15
-	sta WSYNC
-	sta WSYNC
 deliloop 
 	sta WSYNC
+	lda vumeter_toggle	; VUMeter or Registers View?
+	bmi deliloop_a		; BMI -> Registers View, skip PF2 and PF3 update
 	txa
 	adc #0
-	col3bak equ *-1	; Red
+	col3bak equ *-1		; Red
 	sta COLPF3
 	txa
 	adc #0
-	col0bak equ *-1		; Yellow
-	sta COLPF0
+	col2bak equ *-1		; Yellow
+	sta COLPF2
+deliloop_a
 	txa
 	adc #0
 	col1bak equ *-1		; Green
@@ -347,18 +349,15 @@ deliloop
 delireversal
 	dex
 	cpx #7
-	delix2 equ *-1
 	sta WSYNC
 	bne deliloop
-	sta WSYNC
-delivered 	
-	lda col0bak
-	sta COLPF0
-	lda col1bak 
-	ora #$0F		; necessary for setting up the mode 2 text brightness level, else it's all black!
+delivered	
+	lda #0
+	sta COLPF2		; necessary for clearing the PF2 colour to black before the DLI is finished
+	sta COLBK
+	sta WSYNC 	
+	lda #$0F		; necessary for setting up the mode 2 text brightness level, else it's all black!
 	sta COLPF1
-	lda col3bak 
-	sta COLPF3
 delidone
 	pla
 	tay
@@ -635,11 +634,14 @@ do_lastpap_reverse
 do_lastpap_forward
 	jmp fast_forward3		; increment speed value 3 (lastpap) 
 do_scroll_up
-	jmp scroll_up			; manually input VSCROL up for the VU Meter toggle, debug code
+;	jmp scroll_up			; manually input VSCROL up for the VU Meter toggle, debug code
+	rts
 do_scroll_down
-	jmp scroll_down			; manually input VSCROL down for the VU Meter toggle, debug code
+;	jmp scroll_down			; manually input VSCROL down for the VU Meter toggle, debug code
+	rts
 do_toggle_help
-	jmp toggle_help			; toggle the main player interface/help screen 
+	rts
+;	jmp toggle_help			; toggle the main player interface/help screen 
 do_play_pause_toggle
 	lda #0
 	sta stop_on_fade_end
@@ -760,16 +762,27 @@ set_speed_ntsc
 ;-----------------
 
 toggle_vumeter
-	lda scroll_buffer
-	bne no_toggle_interrupt
-	lda #0			; vumeter flag, 0 is vumeter, else FF displays the POKEY registers
+	lda #$FF			; vumeter flag, 0 is vumeter, else FF displays the POKEY registers
 	vumeter_toggle equ *-1
 	eor #$FF		; invert bits 
 	sta vumeter_toggle	; overwrite the flag with the new value
-	lda #33
-	sta scroll_buffer
-no_toggle_interrupt
-	rts 
+	bmi set_register_view
+set_vumeter_view	
+	mwa #mode_6 mode6_toggle
+	lda #$44
+	bpl set_view_addresses
+set_register_view
+	mwa #POKE1 mode6_toggle
+	lda #$42
+set_view_addresses
+	sta mode6_toggle-1
+	and #$0F
+	ldx #2
+set_view_addresses_loop
+	sta mode6_toggle+2,x
+	dex
+	bpl set_view_addresses_loop
+	rts
 
 ;-----------------
 	
@@ -787,27 +800,6 @@ toggle_loop
 	sta loop_count		; overwrite the flag with the new value
 	rts 
 	
-;-----------------
-
-toggle_help
-	lda #0
-	help_toggler equ *-1
-	eor #$FF
-	sta help_toggler
-	bmi display_help
-display_player
-	lda <line_0a
-	sta mode2_toggle
-	lda >line_0a
-	sta mode2_toggle+1
-	rts
-display_help	
-	lda <help_0
-	sta mode2_toggle
-	lda >help_0
-	sta mode2_toggle+1
-	rts
-
 ;-----------------
 
 toggle_pokey_mode
@@ -849,6 +841,7 @@ toggle_dli
 stopmusic 
 	jsr stop_pause_reset 
 	mwa oldvbi VVBLKI	; restore the old vbi address
+	mva #$40 NMIEN		; enable vbi 
 	ldx #$00		; disable playfield 
 	stx SDMCTL		; write to Direct Memory Access (DMA) Control register
 	dex			; underflow to #$FF
@@ -889,6 +882,7 @@ set_highlight_c
 	
 print_player_infos
 	mwa #line_0a DISPLAY 	; get the right screen position
+	
 print_minutes
 	lda v_minute
 	ldy #8
@@ -896,7 +890,7 @@ print_minutes
 print_seconds
 	ldx v_second
 	txa
-	ldy #10
+	iny
 	and #1
 	beq no_blink 
 	lda #0
@@ -909,6 +903,8 @@ blink
 done_blink
 	txa
 	jsr printhex_direct
+
+/*	
 print_speed
 	lda acpapx2
 	ldy #17
@@ -925,6 +921,8 @@ print_row
 	lda ZPLZS.SongPtr 
 	ldy #36
 	jsr printhex_direct
+*/
+	
 print_loop
 	ldy #174
 	lda loop_count		; verify if the loop flag is set to update the graphics accordingly
@@ -935,77 +933,66 @@ yes_loop
 	lda #"*" 
 no_loop
 	sta (DISPLAY),y 
+
+
 Print_pointers
-	mwa #line_0a DISPLAY	; get the right screen position first
-	ldy #95
+	ldy #23
 	lda LZS.SongStartPtr+1
 	jsr printhex_direct
 	iny
 	lda LZS.SongStartPtr
 	jsr printhex_direct	
-	ldy #111
+	ldy #34
 	lda LZS.SongEndPtr+1
 	jsr printhex_direct
 	iny
 	lda LZS.SongEndPtr
 	jsr printhex_direct
+
+/*
+debug_progress_bar
+	ldy #18
+	lda bar_counter+0
+	jsr printhex_direct
+	iny
+	lda bar_counter+1
+	jsr printhex_direct
+	iny
+	lda bar_counter+2
+	jsr printhex_direct
+	iny
+	iny
+	lda bar_loop+0
+	jsr printhex_direct
+	iny
+	lda bar_loop+1
+	jsr printhex_direct
+	iny
+	lda bar_loop+2
+	jsr printhex_direct
+	iny
+	iny
+	lda bar_increment+0
+	jsr printhex_direct
+	iny
+	lda bar_increment+1
+	jsr printhex_direct
+	iny
+	lda bar_increment+2
+	jsr printhex_direct
+*/
+
 	rts
 	
 ;-----------------
 
 test_vumeter_toggle
-	lda #0			; the scroll buffer value, if it has a value, it will be used for the amount to scroll
-	scroll_buffer equ *-1
-	beq no_vertical_scroll	; if the value is 0, skip this subroutine
-	jmp do_vumeter_toggle	; else, draw BOTH for the duration of the transition! it will also end with a RTS there
-no_vertical_scroll 
 	lda vumeter_toggle	; the toggle flag will set which direction the scrolling goes
 	bpl do_begindraw	; positive flag, VU Meter, else, POKEY registers, it will be one or the other
 do_draw_registers
 	jmp draw_registers	; end with a RTS
 do_begindraw
 	jmp begindraw		; end with a RTS
-do_vumeter_toggle 
-	lda vumeter_toggle	; the toggle flag will set which direction the scrolling goes
-	bpl scroll_down		; positive flag, scroll down, else, scroll up 
-scroll_up
-	inc vertiscroll
-	lda vertiscroll
-	cmp #8
-	bcc scroll_done
-        clc
-        lda mode6_toggle
-        adc #20
-        sta mode6_toggle
-        lda mode6_toggle+1
-        adc #0
-        sta mode6_toggle+1
-	lda #0
-	sta vertiscroll
-	beq scroll_done
-scroll_down
-	dec vertiscroll
-	bpl scroll_done
-        sec
-        lda mode6_toggle
-        sbc #20
-        sta mode6_toggle
-        lda mode6_toggle+1
-        sbc #0
-        sta mode6_toggle+1 
-	lda #7
-	sta vertiscroll
-scroll_done
-	lda #6
-	vertiscroll equ *-1
-	sta VSCROL 
-	dec scroll_buffer
-	bpl scroll_done_a
-	lda #0			; once it finished scrolling, the buffer is reset to 0
-	sta scroll_buffer
-scroll_done_a
-;	jsr draw_registers	; draw BOTH for the duration of the transition!
-	jsr begindraw		; using JSR is easier since they go one after the other without any further work
 
 ;-----------------
 
@@ -1013,47 +1000,44 @@ scroll_done_a
 ;* this is incredibly crappy code but it gets the job done...
 
 draw_registers
-	mwa #POKE1 DISPLAY	; set the position on screen
-	ldy #26
+	mwa #POKE2 DISPLAY	; set the position on screen
 	ldx #0
-draw_registers_a
-	stx countdown
+	ldy #7
+
+draw_left_pokey
 	lda SDWPOK0,x
+	stx reload_x_left
 	jsr printhex_direct
 	:3 iny
-	ldx countdown
+	ldx #0
+	reload_x_left equ *-1 
 	:2 inx
 	cpx #8
-	bne draw_registers_a
-	lda SDWPOK0,x
-	ldy #68
-	jsr printhex_direct	
-	ldy #46
+	bcc draw_left_pokey
+	cpy #60
+	bcs draw_left_pokey_next
 	ldx #1
-draw_registers_b	
-	stx countdown
-	lda SDWPOK0,x
+	ldy #47
+	bpl draw_left_pokey
+draw_left_pokey_next
+	lda POKCTL0
+	ldy #95
 	jsr printhex_direct
-	:3 iny
-	ldx countdown
-	:2 inx
-	cpx #9
-	bne draw_registers_b
-	lda SDWPOK0,x
-	ldy #78
+	lda POKSKC0
+	ldy #99
 	jsr printhex_direct
+	lda is_stereo_flag
+;	beq draw_registers_mono	
+
+draw_registers_done	
 	rts
-	nop
-	countdown equ *-1
 
 ;-----------------
 
-;* draw the volume blocks
+;* Draw the VUMeter display and process all the variables related to it
 
 begindraw
-	mwa #mode_6+2 DISPLAY	; set the position on screen, offset by 2 in order to be centered
-	lda #$c0		; change the colour to red 
-	sta colour_bar 
+	mwa #mode_6+4 DISPLAY
 	ldx #7			; 4 AUDF + 4 AUDC
 begindraw1
 	lda SDWPOK0,x
@@ -1063,7 +1047,7 @@ begindraw1
 begindraw2
 	lda SDWPOK0-1,x
 	eor #$FF		; invert the value, the pitch goes from lowest to highest from the left side
-	:4 lsr @		; divide by 16
+	:3 lsr @		; divide by 8
 	tay			; transfer to Y
 begindraw3 
 	lda #0
@@ -1075,120 +1059,154 @@ reset_decay
 reset_decay_a
 	:2 dex			; due to the change in values position, indexing uses 8 iterations, for AUDC and AUDF
 	bpl begindraw1		; repeat until all channels are done 
-do_index_line	
-	inx 			; line index = 0, for a total of 4 lines 
-	ldy #15			; 16 columns, including 0 
-do_index_line_a
-	lda decay_buffer,y	; volume value in the corresponding column 
-	beq draw_nothing	; a value of 0 is immediately drawing a blank tile on screen 
-do_index_line_b
-	cpx #1
-	bcc vol_12_to_15	; X = 0
-	beq vol_8_to_11		; X = 1
-	cpx #2
-	beq vol_4_to_7		; X = 2, else, the last line is processed by default 
-vol_0_to_3
-	cmp #4
-	bcs draw_4_bar 
-	cmp #1			; must be equal or above
-	beq draw_1_bar		; 1
-	cmp #2
-	beq draw_2_bar		; 2
-	bne draw_3_bar
-vol_4_to_7
-	cmp #8
-	bcs draw_4_bar 	
-	cmp #5			; must be equal or above
-	bcc draw_0_bar		; overwrite with a blank tile, always
-	beq draw_1_bar		; 5
-	cmp #6
-	beq draw_2_bar		; 6
-	bne draw_3_bar
-vol_8_to_11
-	cmp #12
-	bcs draw_4_bar
-	cmp #9			; must be equal or above
-	bcc draw_0_bar		; overwrite with a blank tile, always
-	beq draw_1_bar		; 9
-	cmp #10
-	beq draw_2_bar		; 10
-	bne draw_3_bar
-vol_12_to_15 
-	cmp #15
-	beq draw_3_bar
-	cmp #13			; must be equal or above
-	bcc draw_0_bar		; overwrite with a blank tile, always 
-	beq draw_1_bar		; 13 
-draw_2_bar
-	lda #60
-	bne draw_line1
-draw_3_bar
-	lda #27
-	bne draw_line1
-draw_4_bar			
-	lda #5
-	bne draw_line1
-draw_0_bar
-	lda #0
-	beq draw_nothing
-draw_1_bar
-	lda #63 
-draw_line1
-	ora #0
-colour_bar equ *-1 
-draw_nothing
-	sta (DISPLAY),y 
+drawnow	
+	ldx #3			; for 4 lines 
+drawagain
+	lda vu_tbl,x
+	sta tbl_colour
+	txa
+	dex
+	stx drawloopcount
+	ldy #31
+	asl @ 
+	asl @ 
+	sta drawlinesub
+drawlineloop
+	lda decay_buffer,y
+	beq drawemptyline
+	sub #0
+	drawlinesub equ *-1
+	beq drawemptyline
+	bpl drawlineloop_good
+drawemptyline
+	lda #vol_0
+	bpl drawlinenothing
+drawlineloop_good
+	cmp #4 
+	bcc drawlineloop_part
+	lda #3
+drawlineloop_part
+	adc #0			; carry will be added for values above 3, to draw 4 bars per line
+	tbl_colour equ *-1
+drawlinenothing
+	sta (DISPLAY),y
 	dey
-	bpl do_index_line_a	; continue until all columns were read
-	cpx #3
-	beq finishedloop	; all channels were done if equal 
-goloopagain
+	bpl drawlineloop
+drawnext
+	ldx #$FF
+	drawloopcount equ *-1
+	bmi drawdone
 	lda DISPLAY		; current memory address used for the process
-	add #20			; mode 6 uses 20 characters 
+	add #40			; mode 4 uses 40 characters per line
 	sta DISPLAY		; adding 20 will move the pointer to the next line
 	scc:inc DISPLAY+1	; in case the boundary is crossed, the pointer MSB will increment as well
-verify_line
-	cpx #1
-	bcc change_line23	; below 1 
-change_line4
-	lda #$40		; change the colour to green 
-	bne colour_changed 
-change_line23 
-	lda #$00 		; change the colour to yellow 
-colour_changed
-	sta colour_bar		; new colour is set for the next line 
-	jmp do_index_line 	; repeat the process for the next line until all lines were drawn  
-
-;-----------------
-
-decay_buffer
-	:16 dta $00 
-decay_speed
-	dta SPEED		; set the speed of decay rate, 0 is no decay, 255 is the highest amount of delay (in frames) 
-finishedloop
-	ldy #0 			; reset value if needed
-	ldx #15			; 16 columns index, including 0 
-do_decay
+	jmp drawagain
+drawdone
 	dec decay_speed
 	bpl decay_done		; if value is positive, it's over, wait for the next frame 
 reset_decay_speed
 	lda #SPEED
 	sta decay_speed		; reset the value in memory, for the next cycle
-decay_again 
-	lda decay_buffer,x
-	beq decay_next		; 0 equals no decay 
-	sub #RATE 
-	bpl decay_again_a	; if positive, write the value in memory 
-	tya
-decay_again_a
-	sta decay_buffer,x	; else, write 0 to it
+do_decay
+	ldx #31 
+	lda #0
 decay_next
-	dex			; next column index
-	bpl decay_again		; repeat until all columns were done 
+	dec decay_buffer,x
+	bpl decay_good
+	sta decay_buffer,x
+decay_good
+	dex
+	bpl decay_next	
 decay_done
 	rts
 	
+vol_0	equ $46
+vol_grn	equ $47
+vol_ylw	equ $4B
+vol_red	equ $CB
+
+decay_buffer
+	:32 dta $00 
+decay_speed
+	dta $00
+vu_tbl
+	dta vol_grn-1, vol_grn-1, vol_ylw-1, vol_red-1
+
 ;-----------------
+
+;* An attempt to display the subtune progression on screen with a progress bar and a cursor to nearest point in time
+;* There are 32 sections, and 8 subsections within each ones of them, for a total of 256 pixels that could be used with this
+;* Roughly, I need to divide a target value by 32 for the coarse movements, then by 8 for the fine movements, I think?
+;* The result should then be the value number of bytes per coarse/fine movements, which can then be used to draw the progress bar
+;* I might be very wrong, but this is worth a try :D
+;* Cross region situations are to be expected, 50 frames per second will be assumed by default for all time references
+;* This is some code I've managed to reverse engineer from rensoupp's LZSS export binary player... :eyes:
+
+bar_cur	equ $4F
+bar_lne	equ $57
+
+bar_counter
+	dta $00,$00,$00
+bar_loop
+	dta $00,$00,$00
+bar_increment
+	dta $00,$00,$00
+
+set_progress_bar
+	clc
+	lda bar_counter+2
+	adc bar_increment+2
+	sta bar_counter+2
+	lda bar_counter+1
+	adc bar_increment+1
+	sta bar_counter+1
+	lda bar_counter+0
+	adc bar_increment+0
+	bcc calculate_progress_bar_a
+	lda #$FF				; bar was maxed out, it won't be updated further
+calculate_progress_bar_a
+	sta bar_counter+0
+set_progress_bar_done
+	rts
+
+draw_progress_bar
+	mwa #line_0c+4 DISPLAY 
+	lda bar_counter+0
+	tax
+	lsr @
+	lsr @
+	lsr @
+	tay 
+	sta draw_empty_bar_count
+	txa
+	and #$07
+	clc 
+	adc #bar_cur
+	sta (DISPLAY),y
+	dey 
+	bmi draw_progress_bar_below_8
+	lda #bar_lne 
+draw_progress_bar_loop1
+	sta (DISPLAY),y
+	dey 
+	bpl draw_progress_bar_loop1
+draw_progress_bar_below_8
+	ldy #31
+	tya
+	sec 
+	sbc #0
+	draw_empty_bar_count equ *-1
+	tax 
+	dex 
+	bmi draw_progress_bar_done
+	lda #0
+draw_progress_bar_loop2
+	sta (DISPLAY),y
+	dey 
+	dex
+	bpl draw_progress_bar_loop2 
+draw_progress_bar_done
+	rts
 
 ;---------------------------------------------------------------------------------------------------------------------------------------------;
 

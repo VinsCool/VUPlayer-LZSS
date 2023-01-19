@@ -55,22 +55,36 @@ SetNewSongPtrsFull 			; if the routine is called from this label, index and loop
 	stx is_fadeing_out		; reset fadeout flag, the new index is loaded from start
 	stx is_looping 			; reset the loop counter, the new index is loaded from start 
 	stx loop_count
+	stx bar_counter+0		; reset the frames counter used for displaying the progress bar
+	stx bar_counter+1
+	stx bar_counter+2
 	lda #0				; current tune index, must be set before the routine is executed
 	SongIdx equ *-1 
 	asl @				; multiply by 2, for the hi and lo bytes of each address 
 	asl @				; multiply again, offset each songs by 4 bytes
 	tax 
-	lda SongIndex,x
+	asl @
+	tay
+	lda SongIndex+0,x
 	sta SongPtr+0
-	inx 
-	lda SongIndex,x
+	lda SongIndex+1,x
 	sta SongPtr+1
-	inx 
-	lda SongIndex,x
+	lda SongIndex+2,x
 	sta SectionPtr+0
-	inx 
-	lda SongIndex,x
+	lda SongIndex+3,x
 	sta SectionPtr+1
+	lda SongTimerCount+0,y
+	sta bar_increment+0
+	lda SongTimerCount+1,y
+	sta bar_increment+1
+	lda SongTimerCount+2,y
+	sta bar_increment+2
+	lda SongTimerCount+4,y
+	sta bar_loop+0
+	lda SongTimerCount+5,y
+	sta bar_loop+1
+	lda SongTimerCount+6,y
+	sta bar_loop+2
 	
 SetNewSongPtrs 				; if the routine is called from this label, it will use the current parameters instead 
 	ldy #0 
@@ -85,6 +99,12 @@ SetNewSongPtrs 				; if the routine is called from this label, it will use the c
 SetNewSongPtrs_a
 	and #$7F
 	sta is_looping
+	lda bar_loop+0
+	sta bar_counter+0
+	lda bar_loop+1
+	sta bar_counter+1
+	lda bar_loop+2
+	sta bar_counter+2
 	ldx #0
 	loop_count equ *-1 
 	bmi SetNewSongPtrs
