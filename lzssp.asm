@@ -17,7 +17,7 @@
 ;* ORG addresses can always be changed based on how memory is layed out, as long as it fits, it should work fine
 
 ZEROPAGE	equ $0000		; Zeropage, the addresses may be changed if necessary, required
-DRIVER		equ $0800		; LZSS driver and data 
+DRIVER		equ $0300		; LZSS driver, buffers and data
 
 ;-----------------
 
@@ -63,8 +63,6 @@ SetNewSongPtrsFull 			; if the routine is called from this label, index and loop
 	asl @				; multiply by 2, for the hi and lo bytes of each address 
 	asl @				; multiply again, offset each songs by 4 bytes
 	tax 
-	asl @
-	tay
 	lda SongIndex+0,x
 	sta SongPtr+0
 	lda SongIndex+1,x
@@ -73,19 +71,14 @@ SetNewSongPtrsFull 			; if the routine is called from this label, index and loop
 	sta SectionPtr+0
 	lda SongIndex+3,x
 	sta SectionPtr+1
-	lda SongTimerCount+0,y
+	lda SongTimerCount+0,x
 	sta bar_increment+0
-	lda SongTimerCount+1,y
+	lda SongTimerCount+1,x
 	sta bar_increment+1
-	lda SongTimerCount+2,y
+	lda SongTimerCount+2,x
 	sta bar_increment+2
-	lda SongTimerCount+4,y
-	sta bar_loop+0
-	lda SongTimerCount+5,y
-	sta bar_loop+1
-	lda SongTimerCount+6,y
-	sta bar_loop+2
-	
+	lda SongTimerCount+3,x
+	sta bar_loop
 SetNewSongPtrs 				; if the routine is called from this label, it will use the current parameters instead 
 	ldy #0 
 	is_looping equ *-1 
@@ -95,16 +88,11 @@ SetNewSongPtrs 				; if the routine is called from this label, it will use the c
 	cmp #$FF
 	bne SetNewSongPtrs_a
 	jmp stop_toggle
-
 SetNewSongPtrs_a
 	and #$7F
 	sta is_looping
-	lda bar_loop+0
-	sta bar_counter+0
-	lda bar_loop+1
-	sta bar_counter+1
-	lda bar_loop+2
-	sta bar_counter+2
+	lda bar_loop
+	sta bar_counter
 	ldx #0
 	loop_count equ *-1 
 	bmi SetNewSongPtrs
@@ -114,12 +102,10 @@ SetNewSongPtrs_a
 	bne SetNewSongPtrs
 	jsr trigger_fade_immediate
 	jmp SetNewSongPtrs
-
 SetNewSongPtrs_b	
 	asl @
 	tax
 	ldy #0
-	
 SetNewSongPtrs_c
 	lda $FFFF,x
 	SongPtr equ *-2
@@ -129,7 +115,6 @@ SetNewSongPtrs_c
 	cpy #4
 	bcc SetNewSongPtrs_c
 	inc is_looping 
-
 SetNewSongPtrsDone
 	lda #0
 	sta LZS.Initialized	; reset the state of the LZSS driver to not initialised so it can play the next tune or loop 

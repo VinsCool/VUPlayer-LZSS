@@ -3,7 +3,6 @@
 ;* Make sure to define the total number of tunes that could be indexed in code using it to avoid garbage data being loaded 
 
 	.align $40
-
 SongIndex 
 	dta a(SNG_0),a(SEQ_0) 
 	dta a(SNG_1),a(SEQ_0) 
@@ -20,7 +19,6 @@ SongIndexEnd
 ;//---------------------------------------------------------------------------------------------
 
 	.align $40
-	
 SongSequence
 SEQ_0	dta $00,$01,$81
 SEQ_1	dta $00,$80
@@ -31,32 +29,15 @@ SongSequenceEnd
 ;//---------------------------------------------------------------------------------------------
 
 	.align $40
-	
 SongTimerCount
-adding	dta $00,$1D,$7F,$FF
-looping	dta $33,$63,$42,$FF
-
-	dta $00,$04,$C0,$FF
-	dta $57,$64,$80,$FF
-	
-	dta $00,$06,$13,$FF
-	dta $30,$61,$55,$FF
-	
-	dta $00,$06,$C3,$FF
-	dta $00,$00,$00,$FF
-	
-	dta $00,$0F,$2D,$FF
-	dta $00,$00,$00,$FF
-	
-	dta $00,$09,$25,$FF
-	dta $00,$00,$00,$FF
-	
-	dta $00,$08,$F8,$FF
-	dta $00,$00,$00,$FF
-	
-	dta $00,$0A,$AB,$FF
-	dta $55,$42,$AA,$FF
-
+	dta $00,$1D,$7F,$33
+	dta $00,$04,$C0,$57
+	dta $00,$06,$13,$30
+	dta $00,$06,$C3,$00
+	dta $00,$0F,$2D,$00
+	dta $00,$09,$25,$00
+	dta $00,$08,$F8,$00
+	dta $00,$0A,$AB,$55
 SongTimerCountEnd
 
 ;-----------------
@@ -64,7 +45,6 @@ SongTimerCountEnd
 ;//---------------------------------------------------------------------------------------------
 
 	.align $40
-	
 SongSection
 SNG_0	dta a(LZ00)
 	dta a(LZ01)

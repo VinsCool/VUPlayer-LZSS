@@ -7,7 +7,7 @@
 
 DISPLAY 	equ $FE		; Display List indirect memory address
 
-;---------------------------------------------------------------------------------------------------------------------------------------------;
+;------------------------------------------------------------------------------------------------------------------------------------;
 
 ;* start of VUPlayer definitions...
 
@@ -25,7 +25,7 @@ STEREO		equ 0		; 0 => MONO, 255 => STEREO, 1 => DUAL MONO
 
 ; screen line for synchronization, important to set with a good value to get smooth execution
 
-VLINE		equ 20		; nice round numbers fit well with multiples of 8 for every xVBI...
+VLINE		equ 22		; nice round numbers fit well with multiples of 8 for every xVBI...
 		ERT VLINE>155	; VLINE cannot be higher than 155!
 
 ; rasterbar colour
@@ -42,11 +42,11 @@ TUNE_NUM	equ (SongIndexEnd-SongIndex)/4
 
 ;* end of VUPlayer definitions...
 
-;---------------------------------------------------------------------------------------------------------------------------------------------;
+;------------------------------------------------------------------------------------------------------------------------------------;
 	
 ; now assemble VUPlayer here... 
 
-start       
+start 
 	ldx #0			; disable playfield and the black colour value
 	stx SDMCTL		; write to Shadow Direct Memory Access Control address
 	jsr wait_vblank		; wait for vblank before continuing
@@ -134,6 +134,7 @@ is_DONE
 	sty v_minute
 	jsr stop_toggle		; clear the POKEY registers, initialise the LZSS driver, and set VUPlayer to Stop
 	jsr set_subtune_count	; update the subtunes position and total values
+	jsr set_highlight
 	lda SKSTAT		; Serial Port Status
 	and #$08		; SHIFT key being held?
 	beq no_dma		; yes, skip the next 2 instructions
@@ -142,27 +143,26 @@ is_DONE
 no_dma
 	sta dma_flag		; will allow skipping drawing the screen if it was not enabled!
 	ldx #120		; load into index x a 120 frames buffer
-	jsr wait_vblank		; wait for vblank => 1 frame
-	mwa #deli VDSLST	; set our own dli address to jump to
-	mva #$C0 NMIEN		; enable vbi and dli interrupts
 wait_init   
 	jsr wait_vblank		; wait for vblank => 1 frame
 	dex			; decrement index x
 	bne wait_init		; repeat until x = 0, total wait time is ~2 seconds
 init_done
 	sei			; Set Interrupt Disable Status
-	mwa VVBLKI oldvbi       ; vbi address backup
-	mwa #vbi VVBLKI		; write our own vbi address to it 
+	lda #%11111110		; disable BASIC and OS ROMs, leaving almost all memory from $C000 to $FFFF available!
+	sta PORTB		; this will only work for extended XL memory, however
+	mwa #enemi NMI		; set our own NMI vector, bypassing the OS ROM from here
+	mva #$C0 NMIEN		; enable vbi and dli interrupts
+	jsr toggle_vumeter	; make sure this is also set properly before playing
+	jsr play_pause_toggle	; now is the good time to set VUPlayer to Play
 wait_sync
 	lda VCOUNT		; current scanline 
 	cmp #VLINE		; will stabilise the timing if equal
 	bne wait_sync		; nope, repeat
-	jsr toggle_vumeter	; make sure this is also set properly before playing
-	jsr play_pause_toggle	; now is the good time to set VUPlayer to Play
 
 ;-----------------
 
-;---------------------------------------------------------------------------------------------------------------------------------------------;
+;------------------------------------------------------------------------------------------------------------------------------------;
 
 ;* main loop, code runs from here ad infinitum after initialisation
 
@@ -203,7 +203,6 @@ check_play_flag
 	rasterbar_toggler equ *-1
 	bpl do_play
 	sty COLBK			; background colour 
-	sty lastbk
 do_play
 	jsr setpokeyfull		; update the POKEY registers first, for both the SFX and LZSS music driver 
 	jsr LZSSPlayFrame		; Play 1 LZSS frame
@@ -243,79 +242,30 @@ do_play_next
 do_play_done
 	ldy #$00			; black colour value
 	sty COLBK			; background colour
-	sty lastbk
 VU_PLAYER_RTS_NOP equ *
 	jmp loop			; infinitely
 
 ;-----------------
 
-;---------------------------------------------------------------------------------------------------------------------------------------------;
+;------------------------------------------------------------------------------------------------------------------------------------;
 
-;* VBI loop, run through all the code that is needed, then return with a RTI 
+;* Custom DLI and VBI vector, the NMI will jump here first, then branch according to NMIST bits
 
-vbi
-;	sta WSYNC		; horizontal sync, so we're always on the exact same spot, seems to help with timing stability 
-	lda #0
-;	lda #56
-	sta COLBK
-	ldx <line_4		; line 4 of text
-	lda SKSTAT		; Serial Port Status
-	and #$08		; SHIFT key being held?
-	bne set_line_4		; nope, skip the next ldx
-	ldx <line_5		; line 5 of text (toggled by SHIFT) 
-set_line_4  
-	stx txt_toggle		; write to change the text on line 4 
-check_key_pressed 	
-	lda SKSTAT		; Serial Port Status
-	and #$04		; last key still pressed?
-	bne continue		; if not, skip ahead, no input to check
-	lda #0 			; was the last key pressed also held for at least 1 frame? This is a measure added to prevent accidental input spamming
-	held_key_flag equ *-1
-	bmi continue_b		; the held key flag was set if the value is negative! skip ahead immediately in this case 
-	jsr check_keys		; each 'menu' entry will process its action, and return with RTS, the 'held key flag' must then be set!
-	ldx #$FF
-	bmi continue_a		; skip ahead and set the held key flag! 
-continue			; do everything else during VBI after the keyboard checks 
-	ldx #0			; reset the held key flag! 
-continue_a 			; a new held key flag is set when jumped directly here
-	stx held_key_flag 
-continue_b 			; a key was detected as held when jumped directly here
-	lda #$FF		; DMA flag, set to allow skipping drawing the screen if it was not enabled
-	dma_flag equ *-1
-	beq continue_c		; if the value is 0, nothing will be drawn, else, continue with everything below
-	jsr test_vumeter_toggle	; process the VU Meter and POKEY registers display routines there
-	jsr set_subtune_count	; update the subtune count on screen
-	jsr set_play_pause_stop_button
-	jsr set_highlight
-	jsr print_player_infos	; print most of the stuff on screen using printhex or printinfo in bulk 
-	jsr draw_progress_bar	; draw the progress bar during playback, using frames counted during export
-continue_c	
-	jsr calculate_time 	; update the timer, this one is actually necessary, so even with DMA off, it will be executed 
-return_from_vbi			
-	lda #0
-	lastbk equ *-1
-	sta COLBK
-;	sta WSYNC		; horizontal sync, this seems to make the timing more stable
-	pla			;* since we're in our own vbi routine, pulling all values manually is required! 
-	tay
-	pla
-	tax
-	pla
-	rti			; return from interrupt, this ends the VBI time, whenever it actually is "finished" 
-
-;-----------------
-
-;* DLI loop, run through all the code that is needed, then return with a RTI 
-
-deli
-	pha
+enemi
+    	pha
 	txa
 	pha
 	tya
 	pha
-delistart
+	bit NMIST
+	bpl vbi			; Positive value from BIT -> VBI, otherwise, this is a DLI
+
+;-----------------
+	
+;* DLI will run from here
+
+deli
 	lda #0
-;	lda #$56
 	sta COLBK
 	lda #4
 	sta COLPF0		; Gray
@@ -354,11 +304,54 @@ delireversal
 delivered	
 	lda #0
 	sta COLPF2		; necessary for clearing the PF2 colour to black before the DLI is finished
-	sta COLBK
 	sta WSYNC 	
 	lda #$0F		; necessary for setting up the mode 2 text brightness level, else it's all black!
 	sta COLPF1
-delidone
+	bpl endnmi
+	
+;-----------------
+	
+;* VBI will run from here
+
+vbi
+	sta NMIRES
+	ldx <line_4		; line 4 of text
+	lda SKSTAT		; Serial Port Status
+	and #$08		; SHIFT key being held?
+	bne set_line_4		; nope, skip the next ldx
+	ldx <line_5		; line 5 of text (toggled by SHIFT) 
+set_line_4  
+	stx txt_toggle		; write to change the text on line 4 
+check_key_pressed 	
+	lda SKSTAT		; Serial Port Status
+	and #$04		; last key still pressed?
+	bne continue		; if not, skip ahead, no input to check
+	lda #0 			; was the last key pressed also held for at least 1 frame?
+	held_key_flag equ *-1
+	bmi continue_b		; the held key flag was set if the value is negative! skip ahead immediately in this case 
+	jsr check_keys		; each 'menu' entry will process its action, and return with RTS, the 'held key flag' must then be set!
+	ldx #$FF
+	bmi continue_a		; skip ahead and set the held key flag! 
+continue			; do everything else during VBI after the keyboard checks 
+	ldx #0			; reset the held key flag! 
+continue_a 			; a new held key flag is set when jumped directly here
+	stx held_key_flag 
+continue_b 			; a key was detected as held when jumped directly here
+	lda #$FF		; DMA flag, set to allow skipping drawing the screen if it was not enabled
+	dma_flag equ *-1
+	beq continue_c		; if the value is 0, nothing will be drawn, else, continue with everything below
+	jsr test_vumeter_toggle	; process the VU Meter and POKEY registers display routines there
+	jsr set_subtune_count	; update the subtune count on screen
+	jsr set_play_pause_stop_button
+	jsr set_highlight
+	jsr print_player_infos	; print most of the stuff on screen using printhex or printinfo in bulk 
+	jsr draw_progress_bar	; draw the progress bar during playback, using frames counted during export
+continue_c	
+	jsr calculate_time 	; update the timer, this one is actually necessary, so even with DMA off, it will be executed 
+	
+;-----------------
+
+endnmi
 	pla
 	tay
 	pla
@@ -366,13 +359,15 @@ delidone
 	pla
 	rti
 
-;---------------------------------------------------------------------------------------------------------------------------------------------;
+;-----------------
 
-;* everything below this point is either stand alone subroutines that can be called at any time, or some misc data such as display list 
+;------------------------------------------------------------------------------------------------------------------------------------;
+
+;* everything below this point is stand alone subroutines that can be called at any time, or some misc data such as display list 
 
 ; wait for vblank subroutine
 
-wait_vblank 
+wait_vblank
 	lda RTCLOK+2		; load the real time frame counter to accumulator
 wait        
 	cmp RTCLOK+2		; compare to itself
@@ -535,10 +530,10 @@ b_6	jmp stopmusic 		; #6 => eject
 ;* regardless, this finally gets rid of all the spaghetti code I made previously!
 
 check_keys
-	ldx button_selection_flag	; this will be used for the menu selection below, if the key is matching the input... could be better
+	ldx button_selection_flag	; this will be used for the menu selection below, if the key is matching the input...
 	lda KBCODE			; Keyboard Code  
 	and #$3F			; clear the SHIFT and CTRL bits out of the key identifier for the next part
-	asl @				; ASL only once, allowing a 2 bytes index, good enough for branching again immediately and unconditionally, 128 bytes needed sadly...
+	asl @				; ASL only once, allowing a 2 bytes index, good enough for branching again immediately
 	sta k_index+1			; branch will now match the value of Y
 k_index	bne * 
 	bcc do_toggle_loop		; Y = 0 -> L key
@@ -662,7 +657,8 @@ do_set_speed_up
 ;----------------- 
 
 ; seek forward and reverse, both use the initialised flag + the new song pointers subroutine to perform it quickly
-; reverse will land in the forward code, due to the way the song pointers are initialised, forward doesn't even need to increment the index!
+; reverse will land in the forward code, due to the way the song pointers are initialised
+; forward doesn't even need to increment the index!
 
 seek_reverse
 	ldx SongIdx
@@ -764,8 +760,8 @@ set_speed_ntsc
 toggle_vumeter
 	lda #$FF			; vumeter flag, 0 is vumeter, else FF displays the POKEY registers
 	vumeter_toggle equ *-1
-	eor #$FF		; invert bits 
-	sta vumeter_toggle	; overwrite the flag with the new value
+	eor #$FF			; invert bits 
+	sta vumeter_toggle		; overwrite the flag with the new value
 	bmi set_register_view
 set_vumeter_view	
 	mwa #mode_6 mode6_toggle
@@ -787,17 +783,17 @@ set_view_addresses_loop
 ;-----------------
 	
 toggle_rasterbar 
-	lda rasterbar_toggler	; rasterbar flag, a negative value means the rasterbar display is active 
-	eor #$FF		; invert bits 
-	sta rasterbar_toggler	; overwrite the rasterbar flag, execution continues like normal from here 
+	lda rasterbar_toggler		; rasterbar flag, a negative value means the rasterbar display is active 
+	eor #$FF			; invert bits 
+	sta rasterbar_toggler		; overwrite the rasterbar flag, execution continues like normal from here 
 	rts 
 	
 ;-----------------
 
 toggle_loop
-	lda loop_count		; loop flag, 0 is unset, else it is set with FF
-	eor #$FF		; invert bits 
-	sta loop_count		; overwrite the flag with the new value
+	lda loop_count			; loop flag, 0 is unset, else it is set with FF
+	eor #$FF			; invert bits 
+	sta loop_count			; overwrite the flag with the new value
 	rts 
 	
 ;-----------------
@@ -840,15 +836,10 @@ toggle_dli
 
 stopmusic 
 	jsr stop_pause_reset 
-	mwa oldvbi VVBLKI	; restore the old vbi address
-	mva #$40 NMIEN		; enable vbi 
-	ldx #$00		; disable playfield 
-	stx SDMCTL		; write to Direct Memory Access (DMA) Control register
-	dex			; underflow to #$FF
-	stx CH			; write to the CH register, #$FF means no key pressed
-	cli			; this may be why it seems to crash on hardware... I forgot to clear the interrupt bit!
-	jsr wait_vblank		; wait for vblank before continuing
-	jmp (DOSVEC)		; return to DOS, or Self Test by default
+	ldx #$FF
+	stx PORTB			; enable BASIC and OS ROMs again
+	cli				; this may be why it seems to crash on hardware... I forgot to clear the interrupt bit!
+	jmp (DOSVEC)			; return to DOS, or Self Test by default
 
 ;----------------- 
 
@@ -933,7 +924,6 @@ yes_loop
 	lda #"*" 
 no_loop
 	sta (DISPLAY),y 
-
 
 Print_pointers
 	ldy #23
@@ -1138,19 +1128,16 @@ vu_tbl
 ;* There are 32 sections, and 8 subsections within each ones of them, for a total of 256 pixels that could be used with this
 ;* Roughly, I need to divide a target value by 32 for the coarse movements, then by 8 for the fine movements, I think?
 ;* The result should then be the value number of bytes per coarse/fine movements, which can then be used to draw the progress bar
-;* I might be very wrong, but this is worth a try :D
-;* Cross region situations are to be expected, 50 frames per second will be assumed by default for all time references
-;* This is some code I've managed to reverse engineer from rensoupp's LZSS export binary player... :eyes:
 
 bar_cur	equ $4F
 bar_lne	equ $57
 
 bar_counter
 	dta $00,$00,$00
-bar_loop
-	dta $00,$00,$00
 bar_increment
 	dta $00,$00,$00
+bar_loop
+	dta $00
 
 set_progress_bar
 	clc
@@ -1168,6 +1155,8 @@ calculate_progress_bar_a
 	sta bar_counter+0
 set_progress_bar_done
 	rts
+	
+;-----------------
 
 draw_progress_bar
 	mwa #line_0c+4 DISPLAY 
@@ -1208,75 +1197,9 @@ draw_progress_bar_loop2
 draw_progress_bar_done
 	rts
 
-;---------------------------------------------------------------------------------------------------------------------------------------------;
-
-;* line counter spacing table for instrument speed from 1 to 16
-
 ;-----------------
 
-;* the idea here is to pick the best sweet spots each VBI multiples to form 1 "optimal" table, for each region
-;* it seems like the number of lines for the 'fix' value MUST be higher than either 156 for better stability
-;* else, it will 'roll' at random, which is not good! better sacrifice a few lines to keep it stable...
-;* strangely enough, NTSC does NOT suffer from this weird rolling effect... So that one can use values above or below 131 fine
-
-;	    x1  x2  x3  x4  x5  x6  x7  x8  x9  x10 x11 x12 x13 x14 x15 x16 
-
-	dta $EA
-tabppPAL	; "optimal" PAL timing table
-	dta $9C,$4E,$34,$27,$20,$1A,$17,$14,$12,$10,$0F,$0D,$0C,$0C,$0B,$0A
-	
-	dta $9C
-tabppPALfix	; interval offsets for timing stability 
-	dta $9C,$9C,$9C,$9C,$A0,$9C,$A1,$A0,$A2,$A0,$A5,$9C,$9C,$A8,$A5,$A0
-	
-;-----------------
-	
-;* NTSC needs its own adjustment table too... And so will cross-region from both side... Yay numbers! 
-;* adjustments between regions get a lot trickier however...
-;* for example: 
-;* 1xVBI NTSC to PAL, 130 on 156 does work for a stable rate, but it would get all over the place for another number 
-
-;	    x1  x2  x3  x4  x5  x6  x7  x8  x9  x10 x11 x12 x13 x14 x15 x16 
-	
-	dta $FC
-tabppNTSC	; "optimal" NTSC timing table
-	dta $82,$41,$2B,$20,$1A,$15,$12,$10,$0E,$0D,$0B,$0A,$0A,$09,$08,$08
-	
-	dta $7E
-tabppNTSCfix	; interval offsets for timing stability 
-	dta $82,$82,$81,$80,$82,$7E,$7E,$80,$7E,$82,$79,$78,$82,$7E,$78,$80
-
-;-----------------
-
-;* TODO: add cross region tables fix, might be a pain in the ass, blegh...
-
-;-----------------
-
-oldvbi	
-	dta a(0)		; vbi address backup
-	
-;-----------------
-
-; some plaintext data used in few spots
-        
-txt_NTSC
-        dta d"NTSC"*
-txt_PAL
-        dta d"PAL"*,d" "
-txt_VBI
-	dta d"xVBI (Stereo)"
-	
-txt_PLAY
-	dta $7C,$00 		; PLAY button
-	dta d"PLAY  "
-txt_PAUSE
-	dta $7D,$00 		; PAUSE button
-	dta d"PAUSE "
-txt_STOP
-	dta $7B,$00 		; STOP button
-	dta d"STOP  "
-
-;---------------------------------------------------------------------------------------------------------------------------------------------;
+;------------------------------------------------------------------------------------------------------------------------------------;
 
 ; and that's all :D
 

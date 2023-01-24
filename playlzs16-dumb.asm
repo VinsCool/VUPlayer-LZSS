@@ -22,7 +22,7 @@
 ;
 
 	.ALIGN $100
-buffers
+BUFFERS
 	.ds 256 * 9
 
 //////////////////////////////////
@@ -65,7 +65,7 @@ init_song
 	iny
 	sty ZPLZS.bit_data		; always get new bytes
 	sty LZS.Initialized
-	lda #>buffers			; Set the buffer offset 
+	lda #>BUFFERS			; Set the buffer offset 
 	sta cbuf+2
 	ldx #8				; Init all channels
 clear
@@ -73,7 +73,7 @@ clear
 	iny
 	sta SDWPOK0,x
 cbuf
-	sta buffers+255
+	sta BUFFERS+255
 	inc cbuf+2
 	dex
 	bpl clear
@@ -95,7 +95,7 @@ clear2
 LZSSPlayFrame
 	lda LZS.Initialized
 	beq init_song
-	lda #>buffers
+	lda #>BUFFERS
 	sta ZPLZS.bptr+1
 	lda LZS.chn_bitsInit
 	sta LZS.chn_bits
