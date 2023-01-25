@@ -111,9 +111,9 @@ region_done
 is_PAL				; VUMeter colours, adjusted for PAL 
 	lda #$20
 	sta col3bak		; Red
-	lda #$D0+1	
+	lda #$D0		; +1	
 	sta col2bak		; Yellow
-	lda #$B0-2
+	lda #$B0		; -2
 	sta col1bak		; Green
 	ldx #50
 	mva:rne txt_PAL-1,y line_0-1,y-
@@ -121,9 +121,9 @@ is_PAL				; VUMeter colours, adjusted for PAL
 is_NTSC				; VUMeter colours, NTSC colours were originally used
 	lda #$40
 	sta col3bak		; Red
-	lda #$10+1	
+	lda #$10		; +1	
 	sta col2bak		; Yellow
-	lda #$D0-2
+	lda #$D0		; -2
 	sta col1bak		; Green
 	ldx #60
 	mva:rne txt_NTSC-1,y line_0-1,y-
@@ -195,7 +195,6 @@ acpapx2	equ *-1
 	ldx #0
 	scs:inx
 	stx cku
-	sta WSYNC
 check_play_flag
 	lda is_playing_flag 		; 0 -> is playing, else it is either stopped or paused 
 	bne loop			; in this case, nothing will happen until it is changed back to 0 
@@ -211,6 +210,7 @@ do_play
 	lda is_stereo_flag		; What is the current setup?
 	beq dont_swap			; Mono detected -> do nothing 
 	bmi do_swap			; Stereo detected -> swap Left and Right POKEY pointers
+	jsr fade_volume_loop		; run early so it will then work as intended in Dual Mono... hopefully
 	jsr SwapBufferCopy		; Dual Mono detected -> copy the Left POKEY to Right POKEY directly
 	bmi dont_swap			; Unconditional, the subroutine return with the value of $FF in Y 
 do_swap	
@@ -249,10 +249,29 @@ VU_PLAYER_RTS_NOP equ *
 
 ;------------------------------------------------------------------------------------------------------------------------------------;
 
+;* VUMeter shading, from bottom to top, in this order
+
+dlicoltbl
+grn0	dta $06
+grn1	dta $06
+grn2	dta $08
+grn3	dta $0A
+grn4	dta $0C
+grn5	dta $0C
+grn6	dta $0E
+grn7	dta $0E
+ylw0	dta $0E
+ylw1	dta $0C
+ylw2	dta $0A
+ylw3	dta $08
+red0	dta $06
+red1	dta $06
+red2	dta $04
+
 ;* Custom DLI and VBI vector, the NMI will jump here first, then branch according to NMIST bits
 
 enemi
-    	pha
+	pha
 	txa
 	pha
 	tya
@@ -267,14 +286,19 @@ enemi
 deli
 	lda #0
 	sta COLBK
+	sta COLPF0		; first line must be black
+	sta WSYNC
+	sta WSYNC
 	lda #4
 	sta COLPF0		; Gray
-	ldx #3
-	ldy #15
-deliloop 
-	sta WSYNC
+	ldy #14
+deliloop
+	ldx dlicoltbl,y
 	lda vumeter_toggle	; VUMeter or Registers View?
-	bmi deliloop_a		; BMI -> Registers View, skip PF2 and PF3 update
+	bpl deliloop_a		; if BMI -> Registers View, skip PF2, and PF3 update
+	inx 
+	bpl deliloop_b		; unconditional
+deliloop_a
 	txa
 	adc #0
 	col3bak equ *-1		; Red
@@ -283,31 +307,25 @@ deliloop
 	adc #0
 	col2bak equ *-1		; Yellow
 	sta COLPF2
-deliloop_a
+deliloop_b
 	txa
 	adc #0
 	col1bak equ *-1		; Green
 	sta COLPF1
-	dey
-	bmi delireversal	; process the DEX branch if Y < 0
 	inx
+	txa
+	lsr @
+	adc #1
+	sta COLPF0		; Gray
 	sta WSYNC
-	cpx #15
-	bcc deliloop	
-	ldy #0			; if Y does not match X yet, force it
-	beq deliloop
-delireversal
-	dex
-	cpx #7
 	sta WSYNC
-	bne deliloop
-delivered	
+	dey
+	bpl deliloop
 	lda #0
 	sta COLPF2		; necessary for clearing the PF2 colour to black before the DLI is finished
-	sta WSYNC 	
 	lda #$0F		; necessary for setting up the mode 2 text brightness level, else it's all black!
 	sta COLPF1
-	bpl endnmi
+	jmp endnmi
 	
 ;-----------------
 	
@@ -337,18 +355,22 @@ continue			; do everything else during VBI after the keyboard checks
 continue_a 			; a new held key flag is set when jumped directly here
 	stx held_key_flag 
 continue_b 			; a key was detected as held when jumped directly here
+	jsr calculate_time 	; update the timer, this one is actually necessary, so even with DMA off, it will be executed 
 	lda #$FF		; DMA flag, set to allow skipping drawing the screen if it was not enabled
 	dma_flag equ *-1
-	beq continue_c		; if the value is 0, nothing will be drawn, else, continue with everything below
+	beq continue_d		; if the value is 0, nothing will be drawn, else, continue with everything below
 	jsr test_vumeter_toggle	; process the VU Meter and POKEY registers display routines there
 	jsr set_subtune_count	; update the subtune count on screen
 	jsr set_play_pause_stop_button
 	jsr set_highlight
 	jsr print_player_infos	; print most of the stuff on screen using printhex or printinfo in bulk 
 	jsr draw_progress_bar	; draw the progress bar during playback, using frames counted during export
-continue_c	
-	jsr calculate_time 	; update the timer, this one is actually necessary, so even with DMA off, it will be executed 
-	
+continue_c
+	lda VCOUNT		; this is not ideal... too many scanlines are wasted when the VBI period is shorter
+	cmp #124 		; VBI begins at 124 * 2 = 248 scanlines, so it should be at least below it before it's finished
+	bcs continue_d		; hopefully, this will compensate for the unstable scanline counter timing when VBI is ended earlier
+continue_d			; also skip waiting further if DMA is not enabled, since it might be for performance reasons
+
 ;-----------------
 
 endnmi
@@ -453,6 +475,7 @@ hex_num dta $00
 ;-----------------
 	
 ;* VUPlayer specific code, for displaying the current player state
+;* TODO: Merge with the set_highlight subroutine?
 
 set_play_pause_stop_button
 	ldx is_playing_flag		; what is the current state of the player?
@@ -478,6 +501,9 @@ play_button_toggle_a
 
 ;-----------------
 
+;* Display the currently playing subtune number, as well as the total number of subtunes
+;* TODO: Optmise, this while thing, it's wasting a lot of CPU being redrawn every frame
+
 set_subtune_count
 	ldx SongIdx
 	inx
@@ -500,7 +526,7 @@ set_subtune_count_done
 	
 ;-----------------
 
-;* menu input handler subroutine, all jumps will end on a RTS, and return to the 'set held key flag' execution 
+;* Menu input handler subroutine, all jumps will end on a RTS, and return to the 'set held key flag' execution 
 
 do_button_selection   
 	lda #2			; by default, the PLAY/PAUSE button 
@@ -993,7 +1019,6 @@ draw_registers
 	mwa #POKE2 DISPLAY	; set the position on screen
 	ldx #0
 	ldy #7
-
 draw_left_pokey
 	lda SDWPOK0,x
 	stx reload_x_left
@@ -1016,9 +1041,35 @@ draw_left_pokey_next
 	lda POKSKC0
 	ldy #99
 	jsr printhex_direct
+/*
+test_stereo_flag
 	lda is_stereo_flag
-;	beq draw_registers_mono	
-
+	beq draw_registers_done	
+*/	
+	ldx #0
+	ldy #25
+draw_right_pokey
+	lda SDWPOK1,x
+	stx reload_x_right
+	jsr printhex_direct
+	:3 iny
+	ldx #0
+	reload_x_right equ *-1 
+	:2 inx
+	cpx #8
+	bcc draw_right_pokey
+	cpy #79
+	bcs draw_right_pokey_next
+	ldx #1
+	ldy #65
+	bpl draw_right_pokey
+draw_right_pokey_next
+	lda POKCTL1
+	ldy #113
+	jsr printhex_direct
+	lda POKSKC1
+	ldy #117
+	jsr printhex_direct
 draw_registers_done	
 	rts
 
@@ -1027,44 +1078,59 @@ draw_registers_done
 ;* Draw the VUMeter display and process all the variables related to it
 
 begindraw
-	mwa #mode_6+4 DISPLAY
 	ldx #7			; 4 AUDF + 4 AUDC
-begindraw1
-	lda SDWPOK0,x
-	and #$0F
-	beq reset_decay_a	; 0 = no volume to write into the buffer
-	sta temp_volume		; self modifying code
-begindraw2
-	lda SDWPOK0-1,x
-	eor #$FF		; invert the value, the pitch goes from lowest to highest from the left side
+set_decay_update
+	lda SDWPOK0,x		; AUDC 
+	and #$0F		; keep only the volume bits
+	beq skip_decay_merge	; if the volume is already 0, don't even bother, skip
+	pha
+	lda SDWPOK0-1,x		; AUDF
 	:3 lsr @		; divide by 8
-	tay			; transfer to Y
-begindraw3 
-	lda #0
-temp_volume equ *-1		; to hopefully speed up the operations without clogging more bytes
-	cmp decay_buffer,y	; what is the volume level in memory?
-	bcc reset_decay_a	; below the value in memory will be ignored
-reset_decay
-	sta decay_buffer,y	; if above the buffer value, write the new value in memory, the decay is now reset for this column
-reset_decay_a
-	:2 dex			; due to the change in values position, indexing uses 8 iterations, for AUDC and AUDF
-	bpl begindraw1		; repeat until all channels are done 
+	tay			; transfer to Y	for the decay buffer index
+	pla
+	cmp decay_buffer,y	; compare to the current volume level from memory
+	bcc skip_decay_merge
+	sta decay_buffer,y	; write the new value in memory, the decay is now reset for this column	
+skip_decay_merge
+	:2 dex 			; decrement twice since each POKEY channel use 2 bytes
+	bpl set_decay_update	; repeat until all channels are done 
+/*
+begindraw_a
+	lda is_stereo_flag	; is the stereo flag set?
+	bpl drawnow		; if not set, don't check the other POKEY registers
+*/
+	ldx #7			; 4 AUDF + 4 AUDC
+set_decay_update_a
+	lda SDWPOK1,x		; AUDC 
+	and #$0F		; keep only the volume bits
+	beq skip_decay_merge_a	; if the volume is already 0, don't even bother, skip
+	pha
+	lda SDWPOK1-1,x		; AUDF
+	:3 lsr @		; divide by 8
+	tay			; transfer to Y	for the decay buffer index
+	pla
+	cmp decay_buffer,y	; compare to the current volume level from memory
+	bcc skip_decay_merge_a
+	sta decay_buffer,y	; write the new value in memory, the decay is now reset for this column	
+skip_decay_merge_a
+	:2 dex 			; decrement twice since each POKEY channel use 2 bytes
+	bpl set_decay_update_a	; repeat until all channels are done
 drawnow	
-	ldx #3			; for 4 lines 
+	mwa #mode_6+4 DISPLAY
 drawagain
+	ldx #3
+	drawloopcount equ *-1
 	lda vu_tbl,x
 	sta tbl_colour
-	txa
-	dex
-	stx drawloopcount
-	ldy #31
-	asl @ 
-	asl @ 
+	lda vu_sub,x
 	sta drawlinesub
+	ldy vu_ypos,x
+	ldx #31
 drawlineloop
-	lda decay_buffer,y
+	lda decay_buffer,x
 	beq drawemptyline
-	sub #0
+	sec
+	sbc #0
 	drawlinesub equ *-1
 	beq drawemptyline
 	bpl drawlineloop_good
@@ -1080,17 +1146,14 @@ drawlineloop_part
 	tbl_colour equ *-1
 drawlinenothing
 	sta (DISPLAY),y
-	dey
+	iny
+	dex
 	bpl drawlineloop
 drawnext
-	ldx #$FF
-	drawloopcount equ *-1
-	bmi drawdone
-	lda DISPLAY		; current memory address used for the process
-	add #40			; mode 4 uses 40 characters per line
-	sta DISPLAY		; adding 20 will move the pointer to the next line
-	scc:inc DISPLAY+1	; in case the boundary is crossed, the pointer MSB will increment as well
-	jmp drawagain
+	dec drawloopcount
+	bpl drawagain
+	lda #3			; reset the 4 lines offset and counter for the next frame
+	sta drawloopcount
 drawdone
 	dec decay_speed
 	bpl decay_done		; if value is positive, it's over, wait for the next frame 
@@ -1109,7 +1172,7 @@ decay_good
 	bpl decay_next	
 decay_done
 	rts
-	
+
 vol_0	equ $46
 vol_grn	equ $47
 vol_ylw	equ $4B
@@ -1121,6 +1184,10 @@ decay_speed
 	dta $00
 vu_tbl
 	dta vol_grn-1, vol_grn-1, vol_ylw-1, vol_red-1
+vu_sub
+	dta $00,$04,$08,$0C
+vu_ypos
+	dta $78,$50,$28,$00
 
 ;-----------------
 

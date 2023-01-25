@@ -48,32 +48,26 @@ mode_2d dta $43,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,
 ;* Timer, order, row, etc display
 
 line_0a	dta $44 
-	;dta d" Time: 00:00 S: 00/00 Ord: 00 Row: 00 "
-	;dta d" Time: 00:00                          "
 	dta d" Time: 00:00  Start: $0000 End: $0000 "
 	dta $44
 
 ;* Top border
 
-line_0b ;dta $44,$43,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45
-	;dta $45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$41,$44
+line_0b 
 	dta $44
 	dta d"                                      "
 	dta $44
 
 ;* Middle playback progress line
 
-line_0c	;dta $44,$44
-	;dta d"  StartPtr: $0000   EndPtr: $0000   "
-	;dta $44,$44
+line_0c
 	dta $44
 	dta d"  [                                ]  "
 	dta $44
 
 ;* Bottom border
 
-line_0d ;dta $44,$42,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45
-	;dta $45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$40,$44
+line_0d 
 	dta $44
 	dta d"                                      "
 	dta $44
@@ -115,9 +109,9 @@ line_0f dta $42,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,
 
 dlist       
 	:6 dta $70		; start with 6 empty lines
-	dta $C2
-	dta a(line_0)		 
-	dta $70	
+	dta $42
+	dta a(line_0) 
+	dta $F0
 	dta $42	
 mode6_toggle 
 	dta a(mode_6)

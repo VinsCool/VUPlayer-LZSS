@@ -346,9 +346,7 @@ reset_timer
 ; Check the Volume Only bit in CH1, if set but below the $Fx range, it's used, else, it's proper Volume Only output
 
 CheckForTwoToneBit		
-	ldy #1
-	ldx SDWPOK0,y		; AUDC1
-	bufftwo equ *-2
+	ldx POKC0		; AUDC1
 	cpx #$F0		; is the tune expected to run with Proper Volume Only output?
 	bcs NoTwoTone		; if equal or above, this is not used for Two-Tone, don't set it
 	txa
@@ -356,16 +354,13 @@ CheckForTwoToneBit
 	beq NoTwoTone		; if it is not set, there is no Two-Tone Filter active
 	txa
 	eor #$10		; reverse the Volume Only bit
-	sta SDWPOK0,y		; overwrite the AUDC
-	bufftone equ *-2
+	sta POKC0		; overwrite the AUDC
 	lda #$8B		; set the Two-Tone Filter output
 	bne SetTwoTone		; unconditional 
 NoTwoTone
 	lda #3			; default SKCTL register state
 SetTwoTone
-	ldy #9
-	sta SDWPOK0,y		; overwrite the buffered SKCTL byte with the new value
-	buffbit equ *-2
+	sta POKSKC0		; overwrite the buffered SKCTL byte with the new value
 	rts
 
 ;-----------------
@@ -386,12 +381,8 @@ SwapBufferReset
 	lda #<SDWPOK0
 SwapBufferSet
 	sta buffset
-;	sta buffstore
 	sta bufffade1 
 	sta bufffade2 
-;	sta bufftwo
-;	sta bufftone
-;	sta buffbit
 SwapBufferDone
 	rts
 SwapBufferCopy
