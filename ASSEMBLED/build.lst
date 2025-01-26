@@ -1,0 +1,433 @@
+mads 2.1.7
+Source: /mnt/7454F1D454F19956/Shared_Between_VMs/GITFUCK/VUPlayer-LZSS/lzssp.asm
+     1 				;* When used in a project, the LZSS driver must be assembled from this file!
+     2 				;* Include everything needed below, and edit accordingly.
+     3
+     4 				;-----------------
+     5
+     6 				;//---------------------------------------------------------------------------------------------
+     7
+     8 = FFFFFFFF		.def INVALID = -1
+     9 = 0001			.def TRUE = 1
+    10 = 0000			.def FALSE = 0
+    11 = 0000			.def NULL = 0
+    12
+    13 				;SAP_BINARY		equ 0		; 0 == XEX (VUPlayer-LZSS), 1 == SAP (Minimal LZSS Driver)
+    14
+    15 				;* ORG addresses can always be changed based on how memory is layed out, as long as it fits, it should work fine
+    16
+    17 = 0080			ZEROPAGE		equ $0080
+    18 = 0100			STACK			equ $0100
+    19 				;LZDATA			equ $2000
+    20 				;RELOCATOR		equ STACK
+    21 				;DRIVER			equ $D800
+    22 				;BUFFERS		equ $ED00
+    23
+    24 				;* Screen line for synchronization, important to set with a good value to get smooth execution
+    25
+    26 = 0016			VLINE			equ 22
+    27 = 007C			VBLANK_SCANLINE		equ (248 / 2)
+    28 = 009C			PAL_SCANLINE		equ (312 / 2)
+    29 = 0083			NTSC_SCANLINE		equ (262 / 2)
+    30
+    31 				;* Rasterbar
+    32
+    33 = 0080			RASTERBAR_TOGGLE	equ %10000000	; Bit 7 -> Toggle on/off
+    34 = 0069			RASTERBAR_COLOUR	equ $69		; $69 is a nice purpleish hue
+    35
+    36 				;* Default Subtune to be played upon loading
+    37
+    38 = 0000			TUNE_DEF		equ 0
+    39 				;TUNE_NUM		equ [(SongTableEnd - SongTable) / 8]
+    40
+    41 				;-----------------
+    42
+    43 				;//---------------------------------------------------------------------------------------------
+    44
+    45 					opt H+ R- F-
+    46 					icl "atari.def"
+Source: /mnt/7454F1D454F19956/Shared_Between_VMs/GITFUCK/VUPlayer-LZSS/atari.def
+     1 				;* some memory addresses and definitions
+     2
+     3 				;//---------------------------------------------------------------------------------------------
+     4
+     5 = 000A			.def DOSVEC			= $000A
+     6 = 0012			.def RTCLOK			= $0012	; Real Time Clock
+     7
+     8 = 0200			.def VDSLST			= $0200	; Display List Interrupt Vector
+     9
+    10 = 0222			.def VVBLKI			= $0222	; Vertical Blank Immediate (VBI) Register
+    11 = 022F			.def SDMCTL			= $022F	; Shadow Direct Memory Access Control address
+    12 = 0230			.def SDLSTL			= $0230
+    13 = 02C4			.def COLOR0			= $02C4
+    14 = 02C5			.def COLOR1			= $02C5
+    15 = 02C6			.def COLOR2			= $02C6
+    16 = 02C7			.def COLOR3			= $02C7
+    17 = 02C8			.def COLOR4			= $02C8
+    18 = 02E0			.def RUNAD			= $02E0
+    19 = 02E2			.def INITAD			= $02E2
+    20 = 02F2			.def CH1			= $02F2
+    21 = 02F4			.def CHBAS 			= $02F4
+    22 = 02FC			.def CH				= $02FC
+    23
+    24 = D000			.def HPOSP0          		= $D000	; HORIZONTAL POSITION P0
+    25 = D001			.def HPOSP1          		= $D001	; HORIZONTAL POSITION P1
+    26 = D002			.def HPOSP2          		= $D002	; HORIZONTAL POSITION P2
+    27 = D003			.def HPOSP3          		= $D003	; HORIZONTAL POSITION P3
+    28 = D004			.def HPOSM0          		= $D004	; HORIZONTAL POSITION M0
+    29 = D005			.def HPOSM1          		= $D005	; HORIZONTAL POSITION M1
+    30 = D006			.def HPOSM2          		= $D006	; HORIZONTAL POSITION M2
+    31 = D007			.def HPOSM3          		= $D007	; HORIZONTAL POSITION M3
+    32 = D008			.def SIZEP0          		= $D008	; SIZE P0
+    33 = D009			.def SIZEP1          		= $D009	; SIZE P0
+    34 = D00A			.def SIZEP2          		= $D00A	; SIZE P0
+    35 = D00B			.def SIZEP3          		= $D00B	; SIZE P0
+    36 = D00C			.def SIZEM           		= $D00C	; SIZE M
+    37 = D00D			.def GRAFP0          		= $D00D
+    38 = D00E			.def GRAFP1          		= $D00E
+    39 = D00F			.def GRAFP2          		= $D00F
+    40 = D010			.def GRAFP3          		= $D010
+    41 = D010			.def TRIG0			= $D010
+    42 = D011			.def GRAFM           		= $D011
+    43 = D012			.def COLPM0          		= $D012	; COLOR P0/M0
+    44 = D013			.def COLPM1          		= $D013	; COLOR P1/M1
+    45 = D014			.def COLPM2          		= $D014	; COLOR P2/M2
+    46 = D014			.def NTSCPAL         		= $D014
+    47 = D015			.def COLPM3          		= $D015	; COLOR P3/M3
+    48 = D016			.def COLPF0         		= $D016
+    49 = D017			.def COLPF1          		= $D017
+    50 = D018			.def COLPF2          		= $D018
+    51 = D019			.def COLPF3          		= $D019
+    52 = D01A			.def COLBK           		= $D01A
+    53 = D01B			.def GPRIOR          		= $D01B
+    54 = D01D			.def GRACTL          		= $D01D
+    55
+    56 = D200			.def POKEY 			= $D200
+    57 = D209			.def KBCODE			= $D209
+    58 = D20A			.def RANDOM			= $D20A
+    59 = D20E			.def IRQEN          		= $D20E
+    60 = D20E			.def IRQST          		= $D20E
+    61 = D20F			.def SKCTL			= $D20F
+    62 = D20F			.def SKSTAT			= $D20F
+    63
+    64 = D300			.def PORTA			= $D300
+    65 = D301			.def PORTB           		= $D301
+    66
+    67 = D400			.def DMACTL          		= $D400
+    68 = D401			.def CHACTL          		= $D401
+    69 = D402			.def DLISTL          		= $D402
+    70 = D403			.def DLISTH          		= $D403
+    71 = D404			.def HSCROL          		= $D404
+    72 = D405			.def VSCROL          		= $D405
+    73 = D407			.def PMBASE          		= $D407	; STARTING ADRESS PLAYER MISSILE GRAPHICS
+    74 = D409			.def CHBASE          		= $D409
+    75 = D40A			.def WSYNC           		= $D40A
+    76 = D40B			.def VCOUNT          		= $D40B
+    77 = D40E			.def NMIEN          		= $D40E 
+    78 = D40F			.def NMIST           		= $D40F
+    79 = D40F			.def NMIRES			= $D40F
+    80
+    81 = FFFA			.def NMI             		= $FFFA
+    82 = FFFC			.def RESET           		= $FFFC
+    83 = FFFE			.def IRQ             		= $FFFE
+    84
+    85 				;//---------------------------------------------------------------------------------------------
+    86
+    87 				.MACRO CHECK_NTSCPAL
+    88 						lda		NTSCPAL
+    89 						cmp		#1
+    90 				.ENDM
+    91
+    92 				.MACRO SETBKCOL COLVAL
+    93 				.ifdef DEBUG_COLOR
+    94 						lda		#:COLVAL 
+    95 						sta		COLBK
+    96 				.endif
+    97 				.ENDM
+    98
+    99 				.MACRO KIL
+   100 						dta 2
+   101 				.ENDM
+   102
+   103 				;//---------------------------------------------------------------------------------------------
+   104
+   105 = 0040			.def LMS                 	= 64
+   106 = 0010			.def HS                  	= 16
+   107 = 0004			.def MODE4               	= 4
+   108 = 000D			.def MODED               	= $0D
+   109 = 000E			.def MODEE               	= $0E
+   110 = 000F			.def MODEF               	= $0F
+   111 = 0070			.def BLANK8              	= $70
+   112 = 0080			.def DLI                 	= 128
+   113 = 0041			.def DLIJUMP             	= $41	; jump + wait vsync
+   114 = 0001			.def DL_JUMP             	= $1	; jump 
+   115 = 0000			.def PFSIZE_DISABLED		= 0
+   116 = 0001			.def PFSIZE_NARROW		= 1
+   117 = 0002			.def PFSIZE_NORMAL		= 2
+   118 = 0003			.def PFSIZE_WIDE		= 3
+   119 = 0002			.def GRACTL_PDMA		= 1<<1
+   120 = 0001			.def GRACTL_MDMA		= 1<<0
+    47 					
+    48 					org ZEROPAGE
+    49 					icl "lzsspZP.asm"
+Source: /mnt/7454F1D454F19956/Shared_Between_VMs/GITFUCK/VUPlayer-LZSS/lzsspZP.asm
+     1 				;* LZSS Driver and VUPlayer variables
+     2
+     3 				.local ZPLZS
+     4 				TMP
+     5 = 0080			TMP0		.ds 1
+     6 = 0081			TMP1		.ds 1
+     7 = 0082			TMP2		.ds 1
+     8 = 0083			TMP3		.ds 1
+     9
+    10 = 0084			BufferStart	.ds 2	;* Start Buffer(s) Address, first byte is always the Channel Bit Byte, and must be fetched from it each frame
+    11 = 0086			BufferEnd	.ds 2	;* End Buffer(s) Address
+    12 = 0088			BufferPointer	.ds 2	;* Current Buffer(s) Address
+    13
+    14 = 008A			BufferBitByte	.ds 1	;* Buffer Bit Byte, used for Match or Literal, must be initialised to 1 each time a new File is decompressed
+    15
+    16 = 008B			BufferStatus	.ds 1	;* Buffer Status, Negative flag must be set to force Initialisation in the middle of playback
+    17 = 008C			BufferOffset	.ds 1	;* Buffer Offset, used to update the Current Buffer Address and remaining Buffer Size to process
+    18
+    19 = 008D			ChannelBitByte	.ds 3*1	;* Channel Bit Byte, used for skipping channels when no data is needed for it
+    20
+    21 = 0090			ChannelOffset	.ds 1	;* Channel Offset, common for all Channel Buffers
+    22
+    23 = 0091			ChannelBuffer	.ds 2	;* Channel Buffer(s) Address
+    24
+    25 = 0093			ByteCount	.ds 2*9	;* Channel Bytes to Copy (Match Length)
+    26 = 00A5			LastOffset	.ds 2*9	;* Channel Offset (Match Position)
+    27
+    28 				;SequencePointer	.ds 2
+    29 				;SectionPointer	.ds 2
+    30
+    31 = 00B7			SongPointer	.ds 2
+    32
+    33 = 00B9			SongIndex	.ds 1
+    34 = 00BA			SongCount	.ds 1
+    35 = 00BB			SongSpeed	.ds 1
+    36 = 00BC			SongRegion	.ds 1
+    37 = 00BD			SongStereo	.ds 1
+    38
+    39 = 00BE			SongSequence	.ds 1
+    40 = 00BF			SongSection	.ds 1
+    41 = 00C0			LoopCount	.ds 1
+    42 = 00C1			FadingOut	.ds 1
+    43 = 00C2			StopOnFadeout	.ds 1
+    44
+    45 = 00C3			PlayerStatus	.ds 1
+    46 = 00C4			VolumeMask	.ds 1
+    47
+    48 = 00C5			VolumeLevel	.ds 8
+    49
+    50 = 00CD			MachineStereo	.ds 1
+    51
+    52 = 00CE			MachineRegion	.ds 1
+    53 = 00CF			AdjustSpeed	.ds 1
+    54
+    55 = 00D0			GlobalTimer	.ds 1
+    56 = 00D1			TimerOffset	.ds 1
+    57 = 00D2			Frames		.ds 1
+    58 = 00D3			Seconds		.ds 1
+    59 = 00D4			Minutes		.ds 1
+    60
+    61 = 00D5			SyncStatus	.ds 1
+    62 = 00D6			LastCount	.ds 1
+    63 = 00D7			SyncCount	.ds 1
+    64 = 00D8			SyncOffset	.ds 1
+    65 = 00D9			SyncDelta	.ds 1
+    66 = 00DA			SyncDivision	.ds 1
+    67
+    68 = 00DB			RasterbarToggle	.ds 1
+    69 = 00DC			RasterbarColour	.ds 1
+    70
+    71 = 00DD			LastKeyPressed	.ds 1
+    72 = 00DE			PlayerMenuIndex	.ds 1
+    73
+    74 = 00DF			DMAToggle	.ds 1
+    75 = 00E0			ProgramStatus	.ds 1
+    76 = 00E1			StackPointer	.ds 1
+    77 = 00E2			MemBank		.ds 1
+    78 = 00E3			OrgAddress	.ds 2
+    79 				.endl
+    80
+    81 				;-----------------
+    82
+    83 = 00E5			POKSKC		.ds 2
+    84 				SDWPOK
+    85
+    86 				;* Left POKEY
+    87
+    88 				.local SDWPOK0 
+    89 = 00E7			POKF0		.ds 1
+    90 = 00E8			POKC0		.ds 1
+    91 = 00E9			POKF1		.ds 1
+    92 = 00EA			POKC1		.ds 1
+    93 = 00EB			POKF2		.ds 1
+    94 = 00EC			POKC2		.ds 1
+    95 = 00ED			POKF3		.ds 1
+    96 = 00EE			POKC3		.ds 1
+    97 = 00EF			POKCTL		.ds 1
+    98 				;POKSKC		.ds 1
+    99 				.endl
+   100
+   101 				;-----------------
+   102
+   103 				;* Right POKEY
+   104
+   105 				.local SDWPOK1	
+   106 = 00F0			POKF0		.ds 1
+   107 = 00F1			POKC0		.ds 1
+   108 = 00F2			POKF1		.ds 1
+   109 = 00F3			POKC1		.ds 1
+   110 = 00F4			POKF2		.ds 1
+   111 = 00F5			POKC2		.ds 1
+   112 = 00F6			POKF3		.ds 1
+   113 = 00F7			POKC3		.ds 1
+   114 = 00F8			POKCTL		.ds 1
+   115 				;POKSKC		.ds 1
+   116 				.endl
+   117
+   118 				;-----------------
+   119
+   120 = 00F9			bar_counter	.ds 3
+   121 = 00FC			bar_increment	.ds 3
+   122 = 00FF			bar_loop	.ds 1
+   123 				;DISPLAY		.ds 2
+   124
+   125 				;-----------------
+   126
+   127 				;* VUMeter Volume Decay Buffer
+   128
+   129 				.local ZPVOL
+   130 = 0100			Buffer		.ds 32
+   131 = 0120			Colour		.ds 4
+   132 				.endl
+   133
+   134 				;-----------------
+   135
+    50 					
+    51 					org BUFFERS
+    52 = ED00				.ds ((2 * 9) * 256)
+    53 					
+    54 					.if (OPTION == 1)		;* LZData
+    55 						org LZDATA
+    56 						icl "SongIndex.asm"
+    57 						
+    58 						.echo "> LZDATA size of ", * - LZDATA, ", from ", LZDATA, " to ", *
+    59 					
+    60 					.elseif (OPTION == 2)		;* Relocator
+    61 						org RELOCATOR
+    62 						sei
+    63 						cld
+    64 						mva #%00000000 NMIEN
+    65 						mva #%11111110 PORTB
+    66 						
+    67 				RELOCATORHIJACK
+    68 						;* JMP to Run Address will be written here
+    69 						mva #$4C RELOCATORHIJACK
+    70 						mwa ORG_ADDRESS+6 RELOCATORHIJACK+1
+    71 						mwa #ORG_ADDRESS+12 RELOCATORFROM+1
+    72 						mwa ORG_ADDRESS+8 RELOCATORTO+1
+    73 						sec
+    74 						lda ORG_ADDRESS+10
+    75 						sbc ORG_ADDRESS+8
+    76 						eor #%11111111
+    77 						tax
+    78 						lda ORG_ADDRESS+11
+    79 						sbc ORG_ADDRESS+9
+    80 						eor #%11111111
+    81 						tay
+    82 						
+    83 				RELOCATORLOOP
+    84 				RELOCATORFROM	lda $FFFF
+    85 				RELOCATORTO	sta $FFFF
+    86 						inc RELOCATORFROM+1
+    87 						sne:inc RELOCATORFROM+2
+    88 						inc RELOCATORTO+1
+    89 						sne:inc RELOCATORTO+2
+    90 						inx
+    91 						sne:iny
+    92 						bne RELOCATORLOOP
+    93 						mva #%11111111 PORTB
+    94 						mva #%11000000 NMIEN
+    95 						cli
+    96 						rts
+    97 						
+    98 						.echo "> RELOCATOR size of ", * - RELOCATOR, ", from ", RELOCATOR, " to ", *
+    99 					
+   100 					.elseif (OPTION == 3)		;* VUPlayer
+   101 						run VUPLAYER
+   102 						org DRIVER
+   103 				VUFONT
+   104 						ins "font.fnt"
+   105 				VUDATA
+   106 						icl "VUData.asm"
+   107 				VUPLAYER
+   108 						icl "VUPlayer.asm"
+   109 				PLAYLZ16
+   110 						icl "playlzs16-dumb.asm"
+   111 				DRIVEREND
+   112 						
+   113 						.echo "> DRIVER size of ", * - DRIVER, ", from ", DRIVER, " to ", *
+   114 						.echo "> Run Address at ", VUPLAYER
+   115 							
+   116 					.elseif (OPTION == 4)		;* PlayLZ16 (Minimal Driver, TODO later)
+   117 					
+   118 					.elseif (OPTION == 5)		;* MergeXEX
+   119 						opt H-
+   120 FF00 FF FF 00 01 6D 01 + 		ins "/ASSEMBLED/Relocator.obx"
+   121 						opt H+
+   122 02E0-02E1> 00 01				run RELOCATOR
+   123 FF74					org ORG_ADDRESS
+   124 2000-343D> FF FF E0 02 + 		ins "/ASSEMBLED/VUPlayer.obx"
+   125 02E2-02E3> 00 01				ini RELOCATOR
+   126 						opt H-
+   127 343E FF FF 00 20 47 BF + 		ins "/ASSEMBLED/LZData.obx"
+   128 						
+   129 					.elseif (OPTION == 6)		;* MergeSAP (Using PlayLZ16, TODO later)
+   130 					
+   131 					.endif
+   132
+   133 				;* Original Assembly Configuration
+   134
+   135 				/*
+   136 					icl "atari.def"
+   137 					org ZEROPAGE
+   138 					icl "lzsspZP.asm"
+   139 					
+   140 					.if (SAP_BINARY)
+   141 						opt H-
+   142 						icl "sap.asm"
+   143 					.endif
+   144
+   145 					opt H+ R- F-
+   146 					org DRIVER
+   147 					
+   148 					.if (SAP_BINARY)
+   149 						icl "LZSS_SAP.asm"
+   150 					.else
+   151 				VUFONT
+   152 						ins "font.fnt"
+   153 				VUDATA
+   154 						icl "VUData.asm"
+   155 				VUPLAYER
+   156 						icl "VUPlayer.asm"
+   157 						run VUPLAYER
+   158 					.endif
+   159 					
+   160 				PLAYLZ16
+   161 					icl "playlzs16-dumb.asm"
+   162 					
+   163 					org LZDATA
+   164 					icl "SongIndex.asm"
+   165 					
+   166 					org BUFFERS
+   167 					.ds ((2 * 9) * 256)
+   168 				*/
+   168
+   169
+   170 				;-----------------
+   171
+   172 				;//---------------------------------------------------------------------------------------------
+   173

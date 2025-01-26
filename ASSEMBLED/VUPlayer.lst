@@ -1,0 +1,2915 @@
+mads 2.1.7
+Source: /mnt/7454F1D454F19956/Shared_Between_VMs/GITFUCK/VUPlayer-LZSS/lzssp.asm
+     1 				;* When used in a project, the LZSS driver must be assembled from this file!
+     2 				;* Include everything needed below, and edit accordingly.
+     3
+     4 				;-----------------
+     5
+     6 				;//---------------------------------------------------------------------------------------------
+     7
+     8 = FFFFFFFF		.def INVALID = -1
+     9 = 0001			.def TRUE = 1
+    10 = 0000			.def FALSE = 0
+    11 = 0000			.def NULL = 0
+    12
+    13 				;SAP_BINARY		equ 0		; 0 == XEX (VUPlayer-LZSS), 1 == SAP (Minimal LZSS Driver)
+    14
+    15 				;* ORG addresses can always be changed based on how memory is layed out, as long as it fits, it should work fine
+    16
+    17 = 0080			ZEROPAGE		equ $0080
+    18 = 0100			STACK			equ $0100
+    19 				;LZDATA			equ $2000
+    20 				;RELOCATOR		equ STACK
+    21 				;DRIVER			equ $D800
+    22 				;BUFFERS		equ $ED00
+    23
+    24 				;* Screen line for synchronization, important to set with a good value to get smooth execution
+    25
+    26 = 0016			VLINE			equ 22
+    27 = 007C			VBLANK_SCANLINE		equ (248 / 2)
+    28 = 009C			PAL_SCANLINE		equ (312 / 2)
+    29 = 0083			NTSC_SCANLINE		equ (262 / 2)
+    30
+    31 				;* Rasterbar
+    32
+    33 = 0080			RASTERBAR_TOGGLE	equ %10000000	; Bit 7 -> Toggle on/off
+    34 = 0069			RASTERBAR_COLOUR	equ $69		; $69 is a nice purpleish hue
+    35
+    36 				;* Default Subtune to be played upon loading
+    37
+    38 = 0000			TUNE_DEF		equ 0
+    39 				;TUNE_NUM		equ [(SongTableEnd - SongTable) / 8]
+    40
+    41 				;-----------------
+    42
+    43 				;//---------------------------------------------------------------------------------------------
+    44
+    45 					opt H+ R- F-
+    46 					icl "atari.def"
+Source: /mnt/7454F1D454F19956/Shared_Between_VMs/GITFUCK/VUPlayer-LZSS/atari.def
+     1 				;* some memory addresses and definitions
+     2
+     3 				;//---------------------------------------------------------------------------------------------
+     4
+     5 = 000A			.def DOSVEC			= $000A
+     6 = 0012			.def RTCLOK			= $0012	; Real Time Clock
+     7
+     8 = 0200			.def VDSLST			= $0200	; Display List Interrupt Vector
+     9
+    10 = 0222			.def VVBLKI			= $0222	; Vertical Blank Immediate (VBI) Register
+    11 = 022F			.def SDMCTL			= $022F	; Shadow Direct Memory Access Control address
+    12 = 0230			.def SDLSTL			= $0230
+    13 = 02C4			.def COLOR0			= $02C4
+    14 = 02C5			.def COLOR1			= $02C5
+    15 = 02C6			.def COLOR2			= $02C6
+    16 = 02C7			.def COLOR3			= $02C7
+    17 = 02C8			.def COLOR4			= $02C8
+    18 = 02E0			.def RUNAD			= $02E0
+    19 = 02E2			.def INITAD			= $02E2
+    20 = 02F2			.def CH1			= $02F2
+    21 = 02F4			.def CHBAS 			= $02F4
+    22 = 02FC			.def CH				= $02FC
+    23
+    24 = D000			.def HPOSP0          		= $D000	; HORIZONTAL POSITION P0
+    25 = D001			.def HPOSP1          		= $D001	; HORIZONTAL POSITION P1
+    26 = D002			.def HPOSP2          		= $D002	; HORIZONTAL POSITION P2
+    27 = D003			.def HPOSP3          		= $D003	; HORIZONTAL POSITION P3
+    28 = D004			.def HPOSM0          		= $D004	; HORIZONTAL POSITION M0
+    29 = D005			.def HPOSM1          		= $D005	; HORIZONTAL POSITION M1
+    30 = D006			.def HPOSM2          		= $D006	; HORIZONTAL POSITION M2
+    31 = D007			.def HPOSM3          		= $D007	; HORIZONTAL POSITION M3
+    32 = D008			.def SIZEP0          		= $D008	; SIZE P0
+    33 = D009			.def SIZEP1          		= $D009	; SIZE P0
+    34 = D00A			.def SIZEP2          		= $D00A	; SIZE P0
+    35 = D00B			.def SIZEP3          		= $D00B	; SIZE P0
+    36 = D00C			.def SIZEM           		= $D00C	; SIZE M
+    37 = D00D			.def GRAFP0          		= $D00D
+    38 = D00E			.def GRAFP1          		= $D00E
+    39 = D00F			.def GRAFP2          		= $D00F
+    40 = D010			.def GRAFP3          		= $D010
+    41 = D010			.def TRIG0			= $D010
+    42 = D011			.def GRAFM           		= $D011
+    43 = D012			.def COLPM0          		= $D012	; COLOR P0/M0
+    44 = D013			.def COLPM1          		= $D013	; COLOR P1/M1
+    45 = D014			.def COLPM2          		= $D014	; COLOR P2/M2
+    46 = D014			.def NTSCPAL         		= $D014
+    47 = D015			.def COLPM3          		= $D015	; COLOR P3/M3
+    48 = D016			.def COLPF0         		= $D016
+    49 = D017			.def COLPF1          		= $D017
+    50 = D018			.def COLPF2          		= $D018
+    51 = D019			.def COLPF3          		= $D019
+    52 = D01A			.def COLBK           		= $D01A
+    53 = D01B			.def GPRIOR          		= $D01B
+    54 = D01D			.def GRACTL          		= $D01D
+    55
+    56 = D200			.def POKEY 			= $D200
+    57 = D209			.def KBCODE			= $D209
+    58 = D20A			.def RANDOM			= $D20A
+    59 = D20E			.def IRQEN          		= $D20E
+    60 = D20E			.def IRQST          		= $D20E
+    61 = D20F			.def SKCTL			= $D20F
+    62 = D20F			.def SKSTAT			= $D20F
+    63
+    64 = D300			.def PORTA			= $D300
+    65 = D301			.def PORTB           		= $D301
+    66
+    67 = D400			.def DMACTL          		= $D400
+    68 = D401			.def CHACTL          		= $D401
+    69 = D402			.def DLISTL          		= $D402
+    70 = D403			.def DLISTH          		= $D403
+    71 = D404			.def HSCROL          		= $D404
+    72 = D405			.def VSCROL          		= $D405
+    73 = D407			.def PMBASE          		= $D407	; STARTING ADRESS PLAYER MISSILE GRAPHICS
+    74 = D409			.def CHBASE          		= $D409
+    75 = D40A			.def WSYNC           		= $D40A
+    76 = D40B			.def VCOUNT          		= $D40B
+    77 = D40E			.def NMIEN          		= $D40E 
+    78 = D40F			.def NMIST           		= $D40F
+    79 = D40F			.def NMIRES			= $D40F
+    80
+    81 = FFFA			.def NMI             		= $FFFA
+    82 = FFFC			.def RESET           		= $FFFC
+    83 = FFFE			.def IRQ             		= $FFFE
+    84
+    85 				;//---------------------------------------------------------------------------------------------
+    86
+    87 				.MACRO CHECK_NTSCPAL
+    88 						lda		NTSCPAL
+    89 						cmp		#1
+    90 				.ENDM
+    91
+    92 				.MACRO SETBKCOL COLVAL
+    93 				.ifdef DEBUG_COLOR
+    94 						lda		#:COLVAL 
+    95 						sta		COLBK
+    96 				.endif
+    97 				.ENDM
+    98
+    99 				.MACRO KIL
+   100 						dta 2
+   101 				.ENDM
+   102
+   103 				;//---------------------------------------------------------------------------------------------
+   104
+   105 = 0040			.def LMS                 	= 64
+   106 = 0010			.def HS                  	= 16
+   107 = 0004			.def MODE4               	= 4
+   108 = 000D			.def MODED               	= $0D
+   109 = 000E			.def MODEE               	= $0E
+   110 = 000F			.def MODEF               	= $0F
+   111 = 0070			.def BLANK8              	= $70
+   112 = 0080			.def DLI                 	= 128
+   113 = 0041			.def DLIJUMP             	= $41	; jump + wait vsync
+   114 = 0001			.def DL_JUMP             	= $1	; jump 
+   115 = 0000			.def PFSIZE_DISABLED		= 0
+   116 = 0001			.def PFSIZE_NARROW		= 1
+   117 = 0002			.def PFSIZE_NORMAL		= 2
+   118 = 0003			.def PFSIZE_WIDE		= 3
+   119 = 0002			.def GRACTL_PDMA		= 1<<1
+   120 = 0001			.def GRACTL_MDMA		= 1<<0
+    47 					
+    48 					org ZEROPAGE
+    49 					icl "lzsspZP.asm"
+Source: /mnt/7454F1D454F19956/Shared_Between_VMs/GITFUCK/VUPlayer-LZSS/lzsspZP.asm
+     1 				;* LZSS Driver and VUPlayer variables
+     2
+     3 				.local ZPLZS
+     4 				TMP
+     5 = 0080			TMP0		.ds 1
+     6 = 0081			TMP1		.ds 1
+     7 = 0082			TMP2		.ds 1
+     8 = 0083			TMP3		.ds 1
+     9
+    10 = 0084			BufferStart	.ds 2	;* Start Buffer(s) Address, first byte is always the Channel Bit Byte, and must be fetched from it each frame
+    11 = 0086			BufferEnd	.ds 2	;* End Buffer(s) Address
+    12 = 0088			BufferPointer	.ds 2	;* Current Buffer(s) Address
+    13
+    14 = 008A			BufferBitByte	.ds 1	;* Buffer Bit Byte, used for Match or Literal, must be initialised to 1 each time a new File is decompressed
+    15
+    16 = 008B			BufferStatus	.ds 1	;* Buffer Status, Negative flag must be set to force Initialisation in the middle of playback
+    17 = 008C			BufferOffset	.ds 1	;* Buffer Offset, used to update the Current Buffer Address and remaining Buffer Size to process
+    18
+    19 = 008D			ChannelBitByte	.ds 3*1	;* Channel Bit Byte, used for skipping channels when no data is needed for it
+    20
+    21 = 0090			ChannelOffset	.ds 1	;* Channel Offset, common for all Channel Buffers
+    22
+    23 = 0091			ChannelBuffer	.ds 2	;* Channel Buffer(s) Address
+    24
+    25 = 0093			ByteCount	.ds 2*9	;* Channel Bytes to Copy (Match Length)
+    26 = 00A5			LastOffset	.ds 2*9	;* Channel Offset (Match Position)
+    27
+    28 				;SequencePointer	.ds 2
+    29 				;SectionPointer	.ds 2
+    30
+    31 = 00B7			SongPointer	.ds 2
+    32
+    33 = 00B9			SongIndex	.ds 1
+    34 = 00BA			SongCount	.ds 1
+    35 = 00BB			SongSpeed	.ds 1
+    36 = 00BC			SongRegion	.ds 1
+    37 = 00BD			SongStereo	.ds 1
+    38
+    39 = 00BE			SongSequence	.ds 1
+    40 = 00BF			SongSection	.ds 1
+    41 = 00C0			LoopCount	.ds 1
+    42 = 00C1			FadingOut	.ds 1
+    43 = 00C2			StopOnFadeout	.ds 1
+    44
+    45 = 00C3			PlayerStatus	.ds 1
+    46 = 00C4			VolumeMask	.ds 1
+    47
+    48 = 00C5			VolumeLevel	.ds 8
+    49
+    50 = 00CD			MachineStereo	.ds 1
+    51
+    52 = 00CE			MachineRegion	.ds 1
+    53 = 00CF			AdjustSpeed	.ds 1
+    54
+    55 = 00D0			GlobalTimer	.ds 1
+    56 = 00D1			TimerOffset	.ds 1
+    57 = 00D2			Frames		.ds 1
+    58 = 00D3			Seconds		.ds 1
+    59 = 00D4			Minutes		.ds 1
+    60
+    61 = 00D5			SyncStatus	.ds 1
+    62 = 00D6			LastCount	.ds 1
+    63 = 00D7			SyncCount	.ds 1
+    64 = 00D8			SyncOffset	.ds 1
+    65 = 00D9			SyncDelta	.ds 1
+    66 = 00DA			SyncDivision	.ds 1
+    67
+    68 = 00DB			RasterbarToggle	.ds 1
+    69 = 00DC			RasterbarColour	.ds 1
+    70
+    71 = 00DD			LastKeyPressed	.ds 1
+    72 = 00DE			PlayerMenuIndex	.ds 1
+    73
+    74 = 00DF			DMAToggle	.ds 1
+    75 = 00E0			ProgramStatus	.ds 1
+    76 = 00E1			StackPointer	.ds 1
+    77 = 00E2			MemBank		.ds 1
+    78 = 00E3			OrgAddress	.ds 2
+    79 				.endl
+    80
+    81 				;-----------------
+    82
+    83 = 00E5			POKSKC		.ds 2
+    84 				SDWPOK
+    85
+    86 				;* Left POKEY
+    87
+    88 				.local SDWPOK0 
+    89 = 00E7			POKF0		.ds 1
+    90 = 00E8			POKC0		.ds 1
+    91 = 00E9			POKF1		.ds 1
+    92 = 00EA			POKC1		.ds 1
+    93 = 00EB			POKF2		.ds 1
+    94 = 00EC			POKC2		.ds 1
+    95 = 00ED			POKF3		.ds 1
+    96 = 00EE			POKC3		.ds 1
+    97 = 00EF			POKCTL		.ds 1
+    98 				;POKSKC		.ds 1
+    99 				.endl
+   100
+   101 				;-----------------
+   102
+   103 				;* Right POKEY
+   104
+   105 				.local SDWPOK1	
+   106 = 00F0			POKF0		.ds 1
+   107 = 00F1			POKC0		.ds 1
+   108 = 00F2			POKF1		.ds 1
+   109 = 00F3			POKC1		.ds 1
+   110 = 00F4			POKF2		.ds 1
+   111 = 00F5			POKC2		.ds 1
+   112 = 00F6			POKF3		.ds 1
+   113 = 00F7			POKC3		.ds 1
+   114 = 00F8			POKCTL		.ds 1
+   115 				;POKSKC		.ds 1
+   116 				.endl
+   117
+   118 				;-----------------
+   119
+   120 = 00F9			bar_counter	.ds 3
+   121 = 00FC			bar_increment	.ds 3
+   122 = 00FF			bar_loop	.ds 1
+   123 				;DISPLAY		.ds 2
+   124
+   125 				;-----------------
+   126
+   127 				;* VUMeter Volume Decay Buffer
+   128
+   129 				.local ZPVOL
+   130 = 0100			Buffer		.ds 32
+   131 = 0120			Colour		.ds 4
+   132 				.endl
+   133
+   134 				;-----------------
+   135
+    50 					
+    51 					org BUFFERS
+    52 = ED00				.ds ((2 * 9) * 256)
+    53 					
+    54 					.if (OPTION == 1)		;* LZData
+    55 						org LZDATA
+    56 						icl "SongIndex.asm"
+    57 						
+    58 						.echo "> LZDATA size of ", * - LZDATA, ", from ", LZDATA, " to ", *
+    59 					
+    60 					.elseif (OPTION == 2)		;* Relocator
+    61 						org RELOCATOR
+    62 						sei
+    63 						cld
+    64 						mva #%00000000 NMIEN
+    65 						mva #%11111110 PORTB
+    66 						
+    67 				RELOCATORHIJACK
+    68 						;* JMP to Run Address will be written here
+    69 						mva #$4C RELOCATORHIJACK
+    70 						mwa ORG_ADDRESS+6 RELOCATORHIJACK+1
+    71 						mwa #ORG_ADDRESS+12 RELOCATORFROM+1
+    72 						mwa ORG_ADDRESS+8 RELOCATORTO+1
+    73 						sec
+    74 						lda ORG_ADDRESS+10
+    75 						sbc ORG_ADDRESS+8
+    76 						eor #%11111111
+    77 						tax
+    78 						lda ORG_ADDRESS+11
+    79 						sbc ORG_ADDRESS+9
+    80 						eor #%11111111
+    81 						tay
+    82 						
+    83 				RELOCATORLOOP
+    84 				RELOCATORFROM	lda $FFFF
+    85 				RELOCATORTO	sta $FFFF
+    86 						inc RELOCATORFROM+1
+    87 						sne:inc RELOCATORFROM+2
+    88 						inc RELOCATORTO+1
+    89 						sne:inc RELOCATORTO+2
+    90 						inx
+    91 						sne:iny
+    92 						bne RELOCATORLOOP
+    93 						mva #%11111111 PORTB
+    94 						mva #%11000000 NMIEN
+    95 						cli
+    96 						rts
+    97 						
+    98 						.echo "> RELOCATOR size of ", * - RELOCATOR, ", from ", RELOCATOR, " to ", *
+    99 					
+   100 					.elseif (OPTION == 3)		;* VUPlayer
+   101 FFFF> 02E0-02E1> DC DF			run VUPLAYER
+   102 FF00					org DRIVER
+   103 D800			VUFONT
+   104 D800-EC31> 00 00 00 00 + 		ins "font.fnt"
+   105 DC00			VUDATA
+   106 DC00					icl "VUData.asm"
+Source: /mnt/7454F1D454F19956/Shared_Between_VMs/GITFUCK/VUPlayer-LZSS/VUData.asm
+     1 				;* Text strings, each line holds 40 characters, running in mode 2, line 5 is toggled with the SHIFT key
+     2 				;* Volume bars and POKEY registers are 20 characters per line, running in mode 6, either is toggled with the 'R' key
+     3 				;* TODO: add a help/about pageflip for more details and credits 
+     4
+     5 				;-----------------
+     6
+     7 				;* Topmost line, mode 2 displays region and speed 
+     8
+     9 DC00 00 00 00 00 00 00 + line_0	dta d"                                        "
+    10
+    11 				;* Currently below the volume bars, mode 2, 5 lines, where 1 of them is swapped using the SHIFT key
+    12
+    13 DC28 2C 69 6E 65 00 11 + line_1	dta d"Line 1                                  "
+    14 DC50 2C 69 6E 65 00 12 + line_2	dta d"Line 2                                  "
+    15 DC78 2C 69 6E 65 00 13 + line_3	dta d"Line 3                                  "
+    16 DCA0 2C 69 6E 65 00 14 + line_4	dta d"Line 4 (hold SHIFT to toggle)           "
+    17 DCC8 2C 69 6E 65 00 15 + line_5	dta d"Line 5 (SHIFT is being held right now)  "
+    18
+    19 				;* Version and credit
+    20
+    21 DCF0			line_6
+    22 DCF0 36 35 30 6C 61 79 + 	dta d"VUPlayer-LZSS by VinsCool           "
+    23 DD14 F6 93 8E 90			dta d"v3.0"* 
+    24
+    25 				;-----------------
+    26
+    27 				;* Volume bars, mode 2, 4 lines, this is also the default screen used when the program is loaded, which will be overwritten
+    28
+    29 DD18 00 00 00 00 00 00 + mode_6	dta d"                                        "
+    30 DD40 00 00 00 00 00 00 + mode_6a	dta d"        Welcome to VUPlayer 3.0!        "
+    31 DD68 00 00 00 00 00 00 + mode_6b	dta d"       Playback will begin soon...      "
+    32 DD90 00 00 00 00 00 00 + mode_6c	dta d"                                        "
+    33
+    34 				;* POKEY registers, mode 2, 4 lines
+    35
+    36 DDB8 00 00 00 00 00 00 + POKE1	dta d"      LEFT POKEY      - RIGHT POKEY     "
+    37 DDE0 00 21 35 24 26 00 + POKE2	dta d" AUDF $00 $00 $00 $00 - $00 $00 $00 $00 "
+    38 DE08 00 21 35 24 23 00 + POKE3	dta d" AUDC $00 $00 $00 $00 - $00 $00 $00 $00 "
+    39 DE30 00 21 35 24 23 34 + POKE4	dta d" AUDCTL&SKCTL $00 $00 -         $00 $00 "
+    40
+    41 				;-----------------
+    42
+    43 				;* Topmost border, under the volume bars, back to mode 2
+    44
+    45 DE58 43 45 45 45 45 45 + mode_2d dta $43,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45
+    46 DE6C 45 45 45 45 45 45 + 	dta $45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$41 
+    47
+    48 				;* Timer, order, row, etc display
+    49
+    50 DE80 44			line_0a	dta $44 
+    51 				;	dta d" Time: 00:00  Start: $0000 End: $0000 "
+    52 DE81 00 34 69 6D 65 1A + 	dta d" Time: 00:00.00 SongPtrs: $0000-$0000 "
+    53 DEA7 44				dta $44
+    54
+    55 				;* Top border
+    56
+    57 DEA8			line_0b 
+    58 DEA8 44				dta $44
+    59 				;	dta d"                                      "
+    60 DEA9 2C 1A 11 12 13 14 + 	dta d"L:1234 R:1234 P:00 I:00 L:00 F:00 S:00"
+    61 				;	dta d"           L: 1234  R: 1234           "
+    62 DECF 44				dta $44
+    63
+    64 				;* Middle playback progress line
+    65
+    66 DED0			line_0c
+    67 DED0 44				dta $44
+    68 DED1 00 00 3B 00 00 00 + 	dta d"  [                                ]  "
+    69 DEF7 44				dta $44
+    70
+    71 				;* Bottom border
+    72
+    73 DEF8			line_0d 
+    74 DEF8 44				dta $44
+    75 DEF9 00 00 00 00 00 00 + 	dta d"                                      "
+    76 				;	dta d"     P: 00 I: 00 L: 00 F: 00 S: 00    "
+    77 DF1F 44				dta $44
+    78
+    79 				;* Subtunes display 
+    80
+    81 DF20 44			line_0e	dta $44
+    82 DF21 00 34 75 6E 65 1A + 	dta d" Tune: "
+    83 DF28 10 10		subtpos	dta d"00"
+    84 DF2A 0F				dta d"/"
+    85 DF2B 10 10 00 00 00	subtall	dta d"00   "
+    86
+    87 				;* Control buttons 
+    88 					
+    89 DF30			line_0e1	
+    90 DF30 7B 00			dta $7B,$00 			; STOP button, will be overwritten 
+    91 DF32 33 34 2F 30 00 00 + 	dta d"STOP   "			; STOP text, will be overwritten 
+    92
+    93 				;* Buttons for music player display
+    94
+    95 DF39			b_handler				; index for the buttons handler
+    96 DF39 5F 00		b_seekr	dta $5F,$00			; 0, Seek Reverse
+    97 DF3B 7F 00		b_fastr	dta $7F,$00 			; 1, Fast Reverse
+    98 DF3D 7C 00		b_play	dta $7C,$00 			; 2, PLAY or PAUSE, it will be overwritten when needed! 
+    99 DF3F 7E 00		b_fastf	dta $7E,$00 			; 3, Fast Forward
+   100 DF41 5E 00		b_seekf	dta $5E,$00 			; 4, Seek Forward
+   101 DF43 7B 00		b_stop	dta $7B,$00 			; 5, Stop
+   102 DF45 5D 00		b_eject	dta $5D,$00 			; 6, Eject, will act as a fancy "Exit" button for now... 
+   103 DF47 44				dta $44
+   104
+   105 				;* Bottomest border, this is the last line of the player interface displayer, anything else is optional
+   106
+   107 DF48 42 45 45 45 45 45 + line_0f dta $42,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45
+   108 DF5C 45 45 45 45 45 45 + 	dta $45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$40
+   109
+   110 				;-----------------
+   111 					
+   112 				; Display list
+   113
+   114 DF70			dlist       
+   115 DF70 70 70 70 70 70 70		:6 dta $70		; start with 6 empty lines
+   116 DF76 42				dta $42
+   117 DF77 00 DC			dta a(line_0)
+   118 DF79 E0				dta $E0
+   119 DF7A 42				dta $42	
+   120 DF7B			mode6_toggle 
+   121 DF7B 18 DD			dta a(mode_6)
+   122 DF7D 02 02 02			:3 dta $02
+   123 DF80 00				dta $00
+   124 DF81 42				dta $42			; ANTIC mode 2, 7 + 5 lines, the main player display, under the VU Meter/POKEY registers
+   125 DF82 58 DE			dta a(mode_2d)		; top of the player interface, must have its own addressing since the lines below can change	
+   126 DF84 42			mode2_0	dta $42			; ANTIC mode 2, 5 lines, which can be switched on the fly
+   127 DF85			mode2_toggle
+   128 DF85 80 DE			dta a(line_0a)		; this part will also be used to display the help screen with the 'H' key
+   129 DF87 02 02 02 02		mode2_1	:4 dta $02		; the next 4 lines are all used for the main player interface, or help screen
+   130 DF8B 42				dta $42			; ANTIC mode 2, 1 line
+   131 DF8C 48 DF			dta a(line_0f)		; bottom of the player interface, must have its own addressing since the lines above can change
+   132 DF8E 70				dta $70			; finish this part with 1 empty line
+   133 DF8F 42				dta $42			; ANTIC mode 2, 3+2 lines, user input text overwritten using RMT's export feature
+   134 DF90 28 DC			dta a(line_1)
+   135 DF92 02 02			:2 dta $02		; the next 2 lines are directly underneath
+   136 DF94 42				dta $42			; ANTIC mode 2, 1+1 line, which can be switched on the fly 
+   137 DF95			txt_toggle
+   138 DF95 A0 DC			dta a(line_4)		; the memory address is set to line_4 by default, or line_5 when SHIFT is held
+   139 DF97 70 70 70			:3 dta $70		; finish with 3 empty lines
+   140 DF9A 42				dta $42			; ANTIC mode 2, 1 line, for the VUPlayer version
+   141 DF9B F0 DC			dta a(line_6)		; 1 final line of mode 2, must have its own addressing or else the SHIFT toggle affects it!
+   142 DF9D 41 70 DF			dta $41,a(dlist)	; Jump and wait for vblank, return to dlist
+   143
+   144 				;-----------------
+   145
+   146 				;------------------------------------------------------------------------------------------------------------------------------------;
+   147
+   148 				;* the idea here is to pick the best sweet spots each VBI multiples to form 1 "optimal" table, for each region
+   149 				;* it seems like the number of lines for the 'fix' value MUST be higher than either 156 for better stability
+   150 				;* else, it will 'roll' at random, which is not good! better sacrifice a few lines to keep it stable...
+   151 				;* strangely enough, NTSC does NOT suffer from this weird rolling effect... So that one can use values above or below 131 fine
+   152
+   153 				;	    x1  x2  x3  x4  x5  x6  x7  x8  x9  x10 x11 x12 x13 x14 x15 x16 
+   154
+   155 				/*
+   156 					dta $EA
+   157 				tabppPAL	; "optimal" PAL timing table
+   158 					dta $9C,$4E,$34,$27,$20,$1A,$17,$14,$12,$10,$0F,$0D,$0C,$0C,$0B,$0A
+   159 					
+   160 					dta $9C
+   161 				tabppPALfix	; interval offsets for timing stability 
+   162 					dta $9C,$9C,$9C,$9C,$A0,$9C,$A1,$A0,$A2,$A0,$A5,$9C,$9C,$A8,$A5,$A0
+   163 				*/
+   163
+   164 					
+   165 				;-----------------
+   166 					
+   167 				;* NTSC needs its own adjustment table too... And so will cross-region from both side... Yay numbers! 
+   168 				;* adjustments between regions get a lot trickier however...
+   169 				;* for example: 
+   170 				;* 1xVBI NTSC to PAL, 130 on 156 does work for a stable rate, but it would get all over the place for another number 
+   171
+   172 				;	    x1  x2  x3  x4  x5  x6  x7  x8  x9  x10 x11 x12 x13 x14 x15 x16 
+   173
+   174 				/*
+   175 					dta $FC
+   176 				tabppNTSC	; "optimal" NTSC timing table
+   177 					dta $82,$41,$2B,$20,$1A,$15,$12,$10,$0E,$0D,$0B,$0A,$0A,$09,$08,$08
+   178 					
+   179 					dta $7E
+   180 				tabppNTSCfix	; interval offsets for timing stability 
+   181 					dta $82,$82,$81,$80,$82,$7E,$7E,$80,$7E,$82,$79,$78,$82,$7E,$78,$80
+   182 				*/
+   182
+   183
+   184 				;-----------------
+   185
+   186 				;* Some plaintext data used in few spots
+   187
+   188 DFA0			VUMeterColours
+   189 DFA0 20 D0 B0 00			dta $20,$D0,$B0,$00
+   190 DFA4 40 10 D0 00			dta $40,$10,$D0,$00
+   191
+   192 DFA8			txt_REGION
+   193 DFA8			txt_PAL
+   194 DFA8 B0 A1 AC 00		        dta d"PAL"*,d" "
+   195 DFAC			txt_NTSC
+   196 DFAC AE B4 B3 A3		        dta d"NTSC"*
+   197 DFB0			txt_VBI
+   198 DFB0 78 36 22 29			dta d"xVBI"
+   199 DFB4			txt_STEREO
+   200 DFB4 0C 00 2D 6F 6E 6F + 	dta d", Mono  "
+   201 DFBC 0C 00 33 74 65 72 + 	dta d", Stereo"
+   202 					
+   203 DFC4			txt_PLAY
+   204 DFC4 7C 00			dta $7C,$00 		; PLAY button
+   205 DFC6 30 2C 21 39 00 00		dta d"PLAY  "
+   206 DFCC			txt_PAUSE
+   207 DFCC 7D 00			dta $7D,$00 		; PAUSE button
+   208 DFCE 30 21 35 33 25 00		dta d"PAUSE "
+   209 DFD4			txt_STOP
+   210 DFD4 7B 00			dta $7B,$00 		; STOP button
+   211 DFD6 33 34 2F 30 00 00		dta d"STOP  "
+   212
+   213 				;-----------------
+   214 					
+   215 				;------------------------------------------------------------------------------------------------------------------------------------;
+   216
+   107 DFDC			VUPLAYER
+   108 DFDC					icl "VUPlayer.asm"
+Source: /mnt/7454F1D454F19956/Shared_Between_VMs/GITFUCK/VUPlayer-LZSS/VUPlayer.asm
+     1 				;************************************************;
+     2 				;* VUPlayer, Version v3.0                       *;
+     3 				;* by VinsCool, 2022-2025                       *;
+     4 				;* This project branched from Simple RMT Player *;
+     5 				;* And has then become its own thing...         *;
+     6 				;************************************************;
+     7
+     8 				;-----------------
+     9
+    10 				;------------------------------------------------------------------------------------------------------------------------------------;
+    11
+    12 DFDC			Start:
+    13
+    14 				/*
+    15 					sei			; Set Interrupt Disable Status
+    16 					cld			; Clear Decimal Flag
+    17 					
+    18 				;	jsr WaitForVBlank	; Too early, this will cause problems if it is executed before NMIEN is Reset in time!
+    19
+    20 					lda #%11111110		; Disable BASIC and OS ROMs, leaving almost all memory from $C000 to $FFFF available!	
+    21 					sta PORTB		; This will only work for extended XL memory, however
+    22 				*/
+    22
+    23
+    24 DFDC A9 00			lda #0
+    25 DFDE 8D 0E D4			sta NMIEN
+    26 DFE1 8D 0E D2			sta IRQEN
+    27 DFE4 8D 00 D4			sta DMACTL
+    28
+    29 DFE7 AA				tax
+    30 DFE8 9D 80 00 CA D0 FA		sta.w:rne ZEROPAGE,x-	; Reset Zeropage Variables
+    31 					
+    32 DFEE BA				tsx
+    33 DFEF 86 E1			stx ZPLZS.StackPointer	; Return Address from the Stack
+    34 					
+    35 DFF1 8D 1A D0			sta COLBK
+    36 DFF4 8D 16 D0			sta COLPF0
+    37 DFF7 8D 18 D0			sta COLPF2
+    38 DFFA 8D 19 D0			sta COLPF3
+    39 DFFD A9 0F			lda #$0F
+    40 DFFF 8D 17 D0			sta COLPF1
+    41 					
+    42 				;	ldx ZPLZS.MemBank
+    43 				;	jsr BankSwitch
+    44 					
+    45 E002 20 FC E1			jsr WaitForVBlank
+    46
+    47 E005 AD 00 20 85 B9		mva LZDATA+0 ZPLZS.SongIndex
+    48 E00A AD 01 20 85 BA		mva LZDATA+1 ZPLZS.SongCount
+    49 E00F AD 02 20 85 DB		mva LZDATA+2 ZPLZS.RasterbarToggle
+    50 E014 AD 03 20 85 DC		mva LZDATA+3 ZPLZS.RasterbarColour
+    51 					
+    52 E019 A9 02 85 DE			mva #2 ZPLZS.PlayerMenuIndex
+    53 					
+    54 E01D 20 FC E1			jsr WaitForVBlank
+    55 E020 20 FA EB			jsr DetectMachineRegion
+    56 E023 20 0B EC			jsr DetectStereoMode
+    57 					
+    58 E026 20 FC E1			jsr WaitForVBlank
+    59 E029 20 92 E9			jsr SetNewSongPtrsFull
+    60 E02C 20 5D EA			jsr stop_pause_reset
+    61 E02F 20 6F EA			jsr setpokeyfull
+    62 E032 20 56 EA			jsr set_stop		; clear the POKEY registers, initialise the LZSS driver, and set VUPlayer to Stop
+    63 E035 20 53 E3			jsr set_subtune_count	; update the subtunes position and total values
+    64 E038 20 44 E6			jsr set_highlight
+    65 E03B 20 63 E6			jsr PrintSongInfos
+    66 E03E 20 FC E1			jsr WaitForVBlank
+    67 					
+    68 E041 A5 CE			lda ZPLZS.MachineRegion
+    69 E043 0A 0A			:2 asl @
+    70 E045 AA				tax
+    71 					
+    72 E046 BD A0 DF			lda VUMeterColours+0,x
+    73 E049 8D 20 01			sta ZPVOL.Colour+0	; Red
+    74 E04C BD A1 DF			lda VUMeterColours+1,x
+    75 E04F 8D 21 01			sta ZPVOL.Colour+1	; Yellow
+    76 E052 BD A2 DF			lda VUMeterColours+2,x
+    77 E055 8D 22 01			sta ZPVOL.Colour+2	; Green
+    78 E058 BD A3 DF			lda VUMeterColours+3,x
+    79 E05B 8D 23 01			sta ZPVOL.Colour+3	; Gray
+    80 					
+    81 E05E 20 FC E1			jsr WaitForVBlank
+    82 E061 A9 E9 8D FA FF A9 + 	mwa #enemi NMI		; Set up our own Interrupt Vector Addresses
+    83 E06B A9 70 8D 02 D4 A9 + 	mwa #dlist DLISTL	; Start Address of the Display List
+    84 E075 A9 80 8D 0E D4		mva #%10000000 NMIEN	; Enable Display List Interrupts only for the Splash Screen gradient effect
+    85 E07A A9 D8 8D 09 D4		mva #>VUFONT CHBASE	; Load the font address into the shadow character register
+    86 					
+    87 E07F A9 22			lda #$22		; DMA Enable, Normal Playfield
+    88 E081 85 DF			sta ZPLZS.DMAToggle
+    89 E083 8D 00 D4			sta DMACTL		; Write to Direct Memory Access Control Address
+    90 E086 A2 78			ldx #120		; Load into index x a 120 frames buffer
+    91 E088 20 04 E2			jsr WaitForSomeTime
+    92 E08B A9 C0 8D 0E D4		mva #%11000000 NMIEN	; Enable Display List and VBlank Interrupts
+    93 E090 58				cli			; Clear Interrupt Disable Status
+    94 					
+    95 E091 20 D2 E5			jsr toggle_vumeter	; make sure this is also set properly before playing
+    96 E094 20 16 EB			jsr set_play		; now is the good time to set VUPlayer to Play
+    97 					
+    98 E097			ResetLoop:
+    99 E097 20 92 E9			jsr SetNewSongPtrsFull
+   100 E09A 20 63 E6			jsr PrintSongInfos
+   101 E09D 20 3D EB			jsr ResetTimer
+   102 					
+   103 E0A0			ResetLoop_a:
+   104 E0A0 20 5D EA			jsr stop_pause_reset
+   105 E0A3 20 6F EA			jsr setpokeyfull
+   106 E0A6 20 48 E2			jsr SetPlaybackSpeed
+   107 E0A9 20 FC E1			jsr WaitForVBlank
+   108 E0AC 20 11 E2			jsr WaitForSync
+   109 					
+   110 				/*
+   111 					ldx #0
+   112 					
+   113 				ResetLoop_b:
+   114 					mva ZEROPAGE,x $C000,x
+   115 					dex
+   116 					bne ResetLoop_b
+   117 					nop
+   118 					mva #%11111111 PORTB
+   119 					nop
+   120 					mva #%11111110 PORTB
+   121 				*/
+   121
+   122
+   123 				;-----------------
+   124
+   125 				;------------------------------------------------------------------------------------------------------------------------------------;
+   126
+   127 				;* Main loop, code runs from here Ad Infinitum after initialisation
+   128
+   129 E0AF			MainLoop:
+   130 E0AF A9 00 8D 1A D0		mva #0 COLBK				; Set Background colour to Black
+   131 E0B4 24 E0			bit ZPLZS.ProgramStatus			; What is the current Program state?
+   132 E0B6 30 DF			bmi ResetLoop				; Reset -> Playback may use new parameters and should be handled as such
+   133 E0B8 A5 C3			lda ZPLZS.PlayerStatus 			; What is the current Player state?
+   134 E0BA D0 E4			bne ResetLoop_a				; Stopped or Paused -> Skip Playback
+   135 E0BC 20 19 E2			jsr WaitForScanline			; Wait until Playback is ready to process
+   136 E0BF 24 DB			bit ZPLZS.RasterbarToggle		; Is there a Rasterbar to display during playback?
+   137 E0C1 10 05 A5 DC 8D 1A + 	spl:mva ZPLZS.RasterbarColour COLBK	; Negative Flag Set -> Update Background colour
+   138 E0C8 20 6F EA			jsr setpokeyfull			; Update POKEY registers
+   139 E0CB 20 EA E8			jsr LZSSPlayFrame			; Play 1 LZSS frame
+   140 				;	scc:jsr SetNewSongPtrs			; Returning with Carry Flag Set -> Update Song Pointers
+   141 E0CE 20 79 EB			jsr SwapBufferCopy			; Dual Mono -> Copy buffered values from Left POKEY to Right POKEY
+   142 E0D1 20 8F EB			jsr SetVolumeLevel			; Apply Volume Level changes and Mute channels with the Volume Mask Bit Set
+   143 E0D4 20 48 EB			jsr CheckForTwoToneBit			; Update SKCTL to use Two-Tone Filter if the Volume Only Bit from AUDC0 is Set
+   144 E0D7 4C AF E0			jmp MainLoop				; Infinitely
+   145 					
+   146 				;-----------------
+   147
+   148 				;------------------------------------------------------------------------------------------------------------------------------------;
+   149
+   150 				;* VUMeter shading, from bottom to top, in this order
+   151
+   152 E0DA			dlicoltbl
+   153 				;	.byte $02, $04, $06, $08, $0A, $0C, $0C, $0E, $0C, $0C, $0A, $08, $06, $04, $02
+   154 E0DA 03 05 07 09 0B 0D + 	.byte $03, $05, $07, $09, $0B, $0D, $0D, $0E, $0D, $0C, $0A, $08, $06, $04, $02
+   155
+   156 				;* Custom DLI and VBI vector, the NMI will jump here first, then branch according to NMIST bits
+   157
+   158 E0E9			enemi
+   159 E0E9 48				pha
+   160 E0EA 8A				txa
+   161 E0EB 48				pha
+   162 E0EC 98				tya
+   163 E0ED 48				pha
+   164 E0EE 2C 0F D4			bit NMIST
+   165 E0F1 30 03 4C 93 E1		jpl vbi			; Positive value from BIT -> VBI, otherwise, this is a DLI
+   166
+   167 				;-----------------
+   168 					
+   169 				;* DLI will run from here
+   170
+   171
+   172 E0F6			deli
+   173 E0F6 2C D3 E5			bit vumeter_toggle
+   174 E0F9 30 7F			jmi deli_d
+   175 E0FB 8D 0A D4			sta WSYNC
+   176 E0FE A9 00			lda #0
+   177 E100 8D 1A D0			sta COLBK
+   178 E103 8D 16 D0			sta COLPF0
+   179 E106 8D 17 D0			sta COLPF1
+   180 E109 8D 18 D0			sta COLPF2
+   181 E10C 8D 19 D0			sta COLPF3
+   182 E10F 8D 0A D4			sta WSYNC
+   183 E112 8D 0A D4			sta WSYNC
+   184 					
+   185 				;	lda #$04
+   186 				;	sta COLPF0
+   187 				;	sta COLPF2
+   188 				;	lda #$AF
+   189 				;	sta COLPF3
+   190 					
+   191 E115 A5 D0			lda ZPLZS.GlobalTimer
+   192 E117 29 01			and #%00000001
+   193 E119 D0 03 8D 0A D4		sne:sta WSYNC
+   194 					
+   195 E11E A0 00			ldy #0
+   196 E120 A2 02			ldx #2
+   197 					
+   198 E122			deli_a
+   199 E122 B9 DA E0			lda dlicoltbl,y
+   200 E125 0D 20 01			ora ZPVOL.Colour+0
+   201 E128 8D 17 D0			sta COLPF1
+   202 E12B 8D 0A D4			sta WSYNC
+   203 E12E B9 DA E0			lda dlicoltbl,y
+   204 E131 4A				lsr @
+   205 E132 69 02			adc #2
+   206 E134 8D 16 D0			sta COLPF0
+   207 E137 8D 0A D4			sta WSYNC
+   208 E13A C8				iny
+   209 E13B CA				dex
+   210 E13C 10 E4			bpl deli_a
+   211 E13E A2 03			ldx #3
+   212 					
+   213 E140			deli_b
+   214 E140 B9 DA E0			lda dlicoltbl,y
+   215 E143 0D 21 01			ora ZPVOL.Colour+1
+   216 E146 8D 17 D0			sta COLPF1
+   217 E149 8D 0A D4			sta WSYNC
+   218 E14C B9 DA E0			lda dlicoltbl,y
+   219 E14F 4A				lsr @
+   220 E150 69 02			adc #2
+   221 E152 8D 16 D0			sta COLPF0
+   222 E155 8D 0A D4			sta WSYNC
+   223 E158 C8				iny
+   224 E159 CA				dex
+   225 E15A 10 E4			bpl deli_b
+   226 E15C A2 07			ldx #7
+   227 					
+   228 E15E			deli_c
+   229 E15E B9 DA E0			lda dlicoltbl,y
+   230 E161 0D 22 01			ora ZPVOL.Colour+2
+   231 E164 8D 17 D0			sta COLPF1
+   232 E167 8D 0A D4			sta WSYNC
+   233 E16A B9 DA E0			lda dlicoltbl,y
+   234 E16D 4A				lsr @
+   235 E16E 69 02			adc #2
+   236 E170 8D 16 D0			sta COLPF0
+   237 E173 8D 0A D4			sta WSYNC
+   238 E176 C8				iny
+   239 E177 CA				dex
+   240 E178 10 E4			bpl deli_c
+   241 					
+   242 E17A			deli_d
+   243 E17A 8D 0A D4			sta WSYNC
+   244 E17D A9 00			lda #0
+   245 E17F 8D 1A D0			sta COLBK
+   246 E182 8D 16 D0			sta COLPF0
+   247 E185 8D 18 D0			sta COLPF2		; necessary for clearing the PF2 colour to black before the DLI is finished
+   248 E188 8D 19 D0			sta COLPF3
+   249 E18B A9 0F			lda #$0F		; necessary for setting up the mode 2 text brightness level, else it's all black!
+   250 E18D 8D 17 D0			sta COLPF1
+   251 E190 4C F6 E1			jmp endnmi
+   252 					
+   253 				;-----------------
+   254 					
+   255 				;* VBI will run from here
+   256
+   257 E193			vbi
+   258 E193 24 DB			bit ZPLZS.RasterbarToggle
+   259 E195 10 05			bpl vbi_a
+   260 E197 A9 38			lda #56
+   261 E199 8D 1A D0			sta COLBK
+   262 					
+   263 E19C			vbi_a
+   264 E19C 8D 0F D4			sta NMIRES		; Reset NMI Status
+   265 E19F E6 D0			inc ZPLZS.GlobalTimer	; Increment Global Timer
+   266 E1A1 20 7A E3			jsr HandleKeyboard	; Handle Keyboard and execute relevant subroutines based on Key presses
+   267 E1A4 A5 C3			lda ZPLZS.PlayerStatus	; What is the current Player state?
+   268 E1A6 D0 25			bne vbi_f		; Stopped or Paused -> Do nothing
+   269 					
+   270 E1A8			vbi_b
+   271 E1A8 C6 D1			dec ZPLZS.TimerOffset
+   272 E1AA F0 21			beq vbi_f
+   273 E1AC 10 08			bpl vbi_c
+   274 E1AE A5 CE			lda ZPLZS.MachineRegion
+   275 E1B0 F0 02 A9 05			seq:lda #5
+   276 E1B4 85 D1			sta ZPLZS.TimerOffset
+   277 					
+   278 E1B6			vbi_c
+   279 E1B6 20 22 EB			jsr CalculateTime 	; Update Timer
+   280 E1B9 20 99 E8			jsr set_progress_bar	; Update Progress Bar
+   281 					
+   282 E1BC			vbi_d
+   283 E1BC 20 3D EA			jsr UpdateVolumeFadeout	; Update Fadeout
+   284 E1BF 24 C3			bit ZPLZS.PlayerStatus	; What is the current Player state?
+   285 E1C1 10 0A			bpl vbi_f		; Still Playing -> Continue like normal
+   286 E1C3 24 C2			bit ZPLZS.StopOnFadeout	; Is it expected to be Stopped from the Fadeout?
+   287 E1C5 30 06			bmi vbi_f		; Yes -> Leave it Stopped
+   288 					
+   289 E1C7			vbi_e
+   290 E1C7 20 8A E5			jsr seek_forward	; Seek Next Song
+   291 E1CA 20 16 EB			jsr set_play		; Switch Playback State to Play
+   292 						
+   293 E1CD			vbi_f
+   294 E1CD A5 DF			lda ZPLZS.DMAToggle
+   295 E1CF F0 20			beq vbi_i		; If the value is 0, nothing will be drawn, else, continue with everything below
+   296 					
+   297 E1D1			vbi_g
+   298 E1D1 20 8D E7			jsr test_vumeter_toggle	; process the VU Meter and POKEY registers display routines there
+   299 E1D4 20 53 E3			jsr set_subtune_count	; update the subtune count on screen
+   300 E1D7 20 20 E3			jsr set_play_pause_stop_button
+   301 E1DA 20 44 E6			jsr set_highlight
+   302 E1DD 20 AA E6			jsr print_player_infos	; print most of the stuff on screen using printhex or printinfo in bulk 
+   303 E1E0 20 B1 E8			jsr draw_progress_bar	; draw the progress bar during playback, using frames counted during export
+   304 					
+   305 E1E3			vbi_h
+   306 E1E3 A2 A0			ldx <line_4		; Line 4 of text
+   307 E1E5 AD 0F D2			lda SKSTAT		; Serial Port Status
+   308 E1E8 29 08			and #$08		; SHIFT Key held down?
+   309 E1EA D0 02 A2 C8			sne:ldx <line_5		; line 5 of text (toggled by SHIFT)
+   310 E1EE 8E 95 DF			stx txt_toggle		; Write to change the text on line 4
+   311 					
+   312 E1F1			vbi_i
+   313 E1F1 A9 00			lda #0
+   314 E1F3 8D 1A D0			sta COLBK
+   315
+   316 				;-----------------
+   317
+   318 E1F6			endnmi
+   319 E1F6 68				pla
+   320 E1F7 A8				tay
+   321 E1F8 68				pla
+   322 E1F9 AA				tax
+   323 E1FA 68				pla
+   324 E1FB 40				rti
+   325
+   326 				;-----------------
+   327
+   328 				;------------------------------------------------------------------------------------------------------------------------------------;
+   329
+   330 				;* everything below this point is stand alone subroutines that can be called at any time, or some misc data such as display list
+   331
+   332 				;------------------------------------------------------------------------------------------------------------------------------------;
+   333
+   334 				 ;* ----------------------------------------------------------------------------
+   335
+   336 				;* Wait for VBlank manually, useful for situations in which NMIs are disabled
+   337 				;* This might not be perfect but this should be good enough for most use cases
+   338
+   339 E1FC			.proc WaitForVBlank
+   340 E1FC AD 0B D4			lda VCOUNT		; Get Current Scanline / 2
+   341 E1FF C9 7C			cmp #VBLANK_SCANLINE	; Is it time for VBlank yet?
+   342 E201 D0 F9			bne WaitForVBlank	; Not Equal -> Keep waiting
+   343 E203 60				rts
+   344 				.endp
+   345
+   346 				;* ----------------------------------------------------------------------------
+   347
+   348 				;* Wait for a specific number of Frames, ranging from 1 and 256
+   349 				;* Set the parameter in the X Register before calling this routine
+   350
+   351 E204			.proc WaitForSomeTime
+   352 E204 8D 0A D4 8D 0A D4		:2 sta WSYNC		; Forcefully increment VCOUNT at least once
+   353 E20A 20 FC E1			jsr WaitForVBlank	; Wait until the end of the current Frame
+   354 E20D CA D0 F4			dex:bne WaitForSomeTime	; if (--X != 0) -> Keep waiting
+   355 E210 60				rts
+   356 				.endp
+   357
+   358 				;* ----------------------------------------------------------------------------
+   359
+   360 				;* Wait until the Sync Scanline count is reached
+   361 				;* Effectively the same as waiting for VBlank but with a different number of Scanlines
+   362
+   363 E211			.proc WaitForSync
+   364 E211 AD 0B D4			lda VCOUNT		; Get Current Scanline / 2
+   365 E214 C9 16			cmp #VLINE		; Is it time for Sync yet?
+   366 E216 D0 F9			bne WaitForSync		; Not Equal -> Keep waiting
+   367 E218 60				rts
+   368 				.endp
+   369 					
+   370 				;* ----------------------------------------------------------------------------
+   371
+   372 E219			.proc WaitForScanline
+   373 E219 A5 D8			lda ZPLZS.SyncOffset
+   374 E21B 06 D5			asl ZPLZS.SyncStatus
+   375 E21D 90 22			bcc WaitForScanlineSkip
+   376 					
+   377 E21F			WaitForScanlineContinue:
+   378 E21F AD 0B D4			lda VCOUNT
+   379 E222 AA				tax
+   380 E223 E5 D6			sbc ZPLZS.LastCount
+   381 E225 B0 02 65 D7			scs:adc ZPLZS.SyncCount
+   382 E229 B0 0A			bcs WaitForScanlineNext
+   383 E22B 69 FF			adc #-1
+   384 E22D 49 FF			eor #-1
+   385 E22F 65 D8			adc ZPLZS.SyncOffset
+   386 E231 85 D8			sta ZPLZS.SyncOffset
+   387 E233 A9 00			lda #0
+   388 					
+   389 E235			WaitForScanlineNext:
+   390 E235 85 D9			sta ZPLZS.SyncDelta
+   391 E237 86 D6			stx ZPLZS.LastCount
+   392 E239 A5 D8			lda ZPLZS.SyncOffset
+   393 E23B E5 D9			sbc ZPLZS.SyncDelta
+   394 E23D 85 D8			sta ZPLZS.SyncOffset
+   395 E23F B0 DE			bcs WaitForScanlineContinue
+   396 					
+   397 E241			WaitForScanlineSkip:
+   398 E241 65 DA			adc ZPLZS.SyncDivision
+   399 E243 85 D8			sta ZPLZS.SyncOffset
+   400 E245 66 D5			ror ZPLZS.SyncStatus
+   401 					
+   402 E247			WaitForScanlineDone:
+   403 E247 60				rts
+   404 				.endp
+   405
+   406 				;* ----------------------------------------------------------------------------
+   407
+   408 				;* Set Playback speed using precalculated lookup tables, depending on the Machine Region
+   409 				;* Cross-region adjustments are also supported, with few compatibility compromises
+   410
+   411 E248			.proc SetPlaybackSpeed
+   412 E248 A5 CE			lda ZPLZS.MachineRegion
+   413 E24A 24 CF			bit ZPLZS.AdjustSpeed
+   414 E24C 10 07			bpl SetPlaybackSpeed_b
+   415 E24E C5 BC			cmp ZPLZS.SongRegion
+   416 E250 F0 03			beq SetPlaybackSpeed_b
+   417
+   418 E252			SetPlaybackSpeed_a:
+   419 E252 18				clc
+   420 E253 69 02			adc #2
+   421 					
+   422 E255			SetPlaybackSpeed_b:
+   423 E255 0A				asl @
+   424 E256 0A				asl @
+   425 E257 0A				asl @
+   426 E258 65 BB			adc ZPLZS.SongSpeed
+   427 E25A A8				tay
+   428 E25B B9 71 E2			lda ScanlineDivisionTable,y
+   429 E25E 85 DA			sta ZPLZS.SyncDivision
+   430 E260 B9 91 E2			lda ScanlineCountTable,y
+   431 E263 85 D7			sta ZPLZS.SyncCount
+   432 					
+   433 E265			SetPlaybackSpeed_c:
+   434 E265 A9 16			lda #VLINE
+   435 E267 85 D6			sta ZPLZS.LastCount
+   436 E269 A0 00			ldy #0
+   437 E26B 84 D8			sty ZPLZS.SyncOffset
+   438 E26D 88				dey
+   439 E26E 84 D5			sty ZPLZS.SyncStatus
+   440 E270 60				rts
+   441 					
+   442 E271			ScanlineDivisionTable:
+   443 E271 9C 4E 34 27 1F 1A + DivPAL	.byte $9C,$4E,$34,$27,$1F,$1A,$16,$13
+   444 E279 83 42 2C 21 1A 16 + DivNTSC	.byte $83,$42,$2C,$21,$1A,$16,$13,$10
+   445 E281 82 41 2D 23 1A 14 + OffPAL	.byte $82,$41,$2D,$23,$1A,$14,$14,$0F
+   446 E289 9C 4E 34 27 1E 1A + OffNTSC	.byte $9C,$4E,$34,$27,$1E,$1A,$18,$15
+   447
+   448 E291			ScanlineCountTable:
+   449 E291 9C 9C 9C 9C 9B 9C + NumPAL	.byte $9C,$9C,$9C,$9C,$9B,$9C,$9A,$98
+   450 E299 83 84 84 84 82 84 + NumNTSC	.byte $83,$84,$84,$84,$82,$84,$85,$80
+   451 E2A1 9C 9C A2 A8 9C 90 + FixPAL	.byte $9C,$9C,$A2,$A8,$9C,$90,$A8,$90
+   452 E2A9 82 82 82 82 7D 82 + FixNTSC	.byte $82,$82,$82,$82,$7D,$82,$8C,$8C
+   453 				.endp
+   454
+   455 				;* ----------------------------------------------------------------------------
+   456
+   457 				; print text from data tables, useful for many things 
+   458
+   459 E2B1			printinfo 
+   460 E2B1 8C BE E2			sty charbuffer
+   461 E2B4 A0 00			ldy #0
+   462 E2B6			do_printinfo
+   463 E2B6 BD FF FF		        lda $ffff,x
+   464 = E2B7			infosrc equ *-2
+   465 E2B9 91 82			sta (ZPLZS.TMP2),y ; sta (DISPLAY),y
+   466 E2BB E8				inx
+   467 E2BC C8				iny 
+   468 E2BD C0 00			cpy #0
+   469 = E2BE			charbuffer equ *-1
+   470 E2BF D0 F5			bne do_printinfo 
+   471 E2C1 60				rts
+   472
+   473 				;-----------------
+   474
+   475 				; print hex characters for several things, useful for displaying all sort of debugging infos
+   476 					
+   477 E2C2			printhex
+   478 E2C2 A0 00			ldy #0
+   479 E2C4			printhex_direct     ; workaround to allow being addressed with y in different subroutines
+   480 E2C4 48				pha
+   481 E2C5 4A 4A 4A 4A			:4 lsr @
+   482 					;beq ph1    ; comment out if you want to hide the leftmost zeroes
+   483 E2C9 AA				tax
+   484 E2CA BD DA E2			lda hexchars,x
+   485 E2CD			ph1	
+   486 E2CD 91 82 C8		        sta (ZPLZS.TMP2),y+ ; sta (DISPLAY),y+
+   487 E2D0 68				pla
+   488 E2D1 29 0F			and #$f
+   489 E2D3 AA				tax
+   490 E2D4 BD DA E2 91 82		mva hexchars,x (ZPLZS.TMP2),y ; (DISPLAY),y
+   491 E2D9 60				rts
+   492 E2DA			hexchars 
+   493 E2DA 10 11 12 13 14 15 +         dta d"0123456789ABCDEF"
+   494
+   495 				;-----------------
+   496
+   497 				;* Convert Hexadecimal numbers to Decimal without lookup tables 
+   498 				;* Based on the routine created by Andrew Jacobs, 28-Feb-2004 
+   499 				;* http://6502.org/source/integers/hex2dec-more.htm 
+   500
+   501 E2EA			hex2dec_convert
+   502 E2EA C9 0A			cmp #10			; below 10 -> 0 to 9 inclusive will display like expected, skip the conversion
+   503 E2EC 90 2E			bcc hex2dec_convert_b
+   504 E2EE C9 64			cmp #100		; process with numbers below 99, else skip the conversion entirely 
+   505 E2F0 B0 2A			bcs hex2dec_convert_b  
+   506 E2F2			hex2dec_convert_a
+   507 E2F2 8D 1F E3			sta hex_num		; temporary 
+   508 E2F5 F8				sed
+   509 E2F6 A9 00			lda #0			; initialise the conversion values
+   510 E2F8 8D 1D E3			sta dec_num
+   511 E2FB 8D 1E E3			sta dec_num+1
+   512 E2FE A2 07			ldx #7			; 8 bits to process 
+   513 E300			hex2dec_loop
+   514 E300 0E 1F E3			asl hex_num 
+   515 E303 AD 1D E3			lda dec_num		; And add into result
+   516 E306 6D 1D E3			adc dec_num
+   517 E309 8D 1D E3			sta dec_num
+   518 E30C AD 1E E3			lda dec_num+1		; propagating any carry
+   519 E30F 6D 1E E3			adc dec_num+1
+   520 E312 8D 1E E3			sta dec_num+1
+   521 E315 CA				dex			; And repeat for next bit
+   522 E316 10 E8			bpl hex2dec_loop
+   523 E318 D8				cld			; Back to binary
+   524 E319 AD 1D E3			lda dec_num 
+   525 E31C			hex2dec_convert_b
+   526 E31C 60				rts			; the value will be returned in the accumulator 
+   527
+   528 E31D 00 00		dec_num dta $00,$00
+   529 E31F 00			hex_num dta $00
+   530 					
+   531 				;-----------------
+   532 					
+   533 				;* VUPlayer specific code, for displaying the current player state
+   534 				;* TODO: Merge with the set_highlight subroutine?
+   535
+   536 E320			set_play_pause_stop_button
+   537 E320 24 C3			bit ZPLZS.PlayerStatus		; What is the current Player state?
+   538 E322 30 06			bmi stop_button_toggle		; Stopped
+   539 E324 70 08			bvs pause_button_toggle		; Paused
+   540 E326 A2 00			ldx #0				; Playing
+   541 E328 F0 06			beq play_button_toggle		; unconditional
+   542 E32A			stop_button_toggle
+   543 E32A A2 10			ldx #16				; #$FF -> is stopped
+   544 E32C D0 02			bne play_button_toggle		; unconditional
+   545 E32E			pause_button_toggle 
+   546 E32E A2 08			ldx #8				; offset by 8 for PAUSE characters	
+   547 E330			play_button_toggle
+   548 E330 A0 07			ldy #7				; 7 character buffer is enough 
+   549 E332 A9 30 85 82 A9 DF + 	mwa #line_0e1 ZPLZS.TMP2 ; DISPLAY		; move the position to the correct line
+   550 E33A A9 C4 8D B7 E2 A9 + 	mwa #txt_PLAY infosrc		; set the pointer for the text data to this location
+   551 E344 20 B1 E2			jsr printinfo 			; write the new text in this location 
+   552 E347 AE 30 DF			ldx line_0e1			; the play/pause/stop character
+   553 E34A E0 7B			cpx #$7B			; is it the STOP character?
+   554 E34C D0 01			bne play_button_toggle_a	; if not, overwrite the character in the buttons display with either PLAY or PAUSE
+   555 E34E E8				inx				; else, make sure PLAY is loaded, then write it in memory 
+   556 E34F			play_button_toggle_a	
+   557 E34F 8E 3D DF			stx b_play 			; overwrite the Play/Pause character
+   558 E352 60				rts
+   559
+   560 				;-----------------
+   561
+   562 				;* Display the currently playing subtune number, as well as the total number of subtunes
+   563 				;* TODO: Optmise, this while thing, it's wasting a lot of CPU being redrawn every frame
+   564
+   565 E353			set_subtune_count
+   566 E353 A6 B9			ldx ZPLZS.SongIndex
+   567 E355 E8				inx
+   568 E356 E0 FF			cpx #$FF
+   569 = E357			current_subtune equ *-1
+   570 E358 F0 1E			beq set_subtune_count_done
+   571 E35A 8E 57 E3			stx current_subtune		; set the new value in memory
+   572 E35D A9 28 85 82 A9 DF + 	mwa #subtpos ZPLZS.TMP2 ; DISPLAY		; get the right screen position first
+   573 E365 8A				txa
+   574 E366 20 EA E2			jsr hex2dec_convert		; convert it to decimal 
+   575 E369 A0 00			ldy #0
+   576 E36B 20 C4 E2			jsr printhex_direct		; Y may not be 0 after the decimal conversion, do not risk it
+   577 E36E A5 BA			lda ZPLZS.SongCount
+   578 E370 20 EA E2			jsr hex2dec_convert		; convert it to decimal 
+   579 E373 A0 03			ldy #3				; offset to update the other number
+   580 E375 20 C4 E2			jsr printhex_direct		; this time Y will position where the character is written
+   581 E378			set_subtune_count_done	
+   582 E378 60				rts
+   583 					
+   584 				;-----------------
+   585
+   586 				;* Menu input handler subroutine, all jumps will end on a RTS, and return to the 'set held key flag' execution 
+   587
+   588 E379			do_button_selection
+   589 E379 60				rts
+   590 					
+   591 				/*
+   592 				do_button_selection   
+   593 					lda #2			; by default, the PLAY/PAUSE button 
+   594 				button_selection_flag equ *-1
+   595 					asl @
+   596 					asl @ 
+   597 					sta b_index+1
+   598 				b_index	bcc *
+   599 				b_0	jmp seek_reverse 	; #0 => seek reverse 
+   600 					nop
+   601 				b_1	jmp fast_reverse	; #1 => fast reverse (decrement speed) 
+   602 					nop
+   603 				b_2	jmp do_play_pause_toggle; #2 => play/pause 
+   604 					nop
+   605 				b_3	jmp fast_forward 	; #3 => fast forward (increment speed) 
+   606 					nop
+   607 				b_4	jmp seek_forward 	; #4 => seek forward 
+   608 					nop
+   609 				b_5	jmp do_stop_toggle 	; #5 => stop
+   610 					nop
+   611 				b_6	jmp stopmusic 		; #6 => eject 
+   612 				*/
+   612
+   613
+   614 				;* ----------------------------------------------------------------------------
+   615
+   616 				;* Keyboard Input Handler, set up using Jump Tables
+   617
+   618 E37A			.proc HandleKeyboard
+   619 E37A AD 0F D2			lda SKSTAT			; Serial Port Status
+   620 E37D 29 04			and #%00000100			; Last Key still pressed?
+   621 E37F F0 05			beq HandleKeyboardContinue	; If yes, process further below
+   622 E381 A9 FF			lda #$FF
+   623 E383 85 DD			sta ZPLZS.LastKeyPressed	; Reset Last Key registered
+   624
+   625 E385			HandleKeyboardDone:
+   626 E385 60				rts
+   627 					
+   628 E386			HandleKeyboardContinue:
+   629 E386 AD 09 D2			lda KBCODE			; Keyboard Code
+   630 E389 29 3F			and #%00111111			; Clear the SHIFT and CTRL bits out of the Key Identifier
+   631 E38B C5 DD			cmp ZPLZS.LastKeyPressed	; Last Key currently held down?
+   632 E38D 85 DD			sta ZPLZS.LastKeyPressed	; Update Last Key registered
+   633 E38F F0 F4			beq HandleKeyboardDone		; If yes, there is nothing else to do here
+   634 E391 20 21 E5			jsr TableJump			; Execute matching Subroutine otherwise
+   635 					
+   636 E394			HandleKeyboardTable:
+   637 E394 09 E6			.word toggle_loop-1		; 0 -> L key
+   638 E396 32 E5			.word DoNothing-1
+   639 E398 32 E5			.word DoNothing-1
+   640 E39A 32 E5			.word DoNothing-1
+   641 E39C 32 E5			.word DoNothing-1
+   642 E39E 32 E5			.word DoNothing-1
+   643 E3A0 97 E5			.word dec_index_selection-1	; 6 -> Atari 'Left' / '+' key
+   644 E3A2 97 E5			.word inc_index_selection-1	; 7 -> Atari 'Right' / '*' key 
+   645 E3A4 50 EA			.word stop_toggle-1		; 8 -> 'O' key (not zero!!) 
+   646 E3A6 32 E5			.word DoNothing-1
+   647 E3A8 D7 EA			.word play_pause_toggle-1	; 10 -> 'P' key
+   648 E3AA 32 E5			.word DoNothing-1
+   649 E3AC 78 E3			.word do_button_selection-1	; 12 -> 'Enter' key
+   650 E3AE 33 E5			.word FrameAdvance-1		; 13 -> 'I' key
+   651 E3B0 32 E5			.word DoNothing-1
+   652 E3B2 32 E5			.word DoNothing-1
+   653 E3B4 32 E5			.word DoNothing-1
+   654 E3B6 32 E5			.word DoNothing-1
+   655 E3B8 32 E5			.word DoNothing-1
+   656 E3BA 32 E5			.word DoNothing-1
+   657 E3BC 32 E5			.word DoNothing-1
+   658 E3BE 32 E5			.word DoNothing-1		; 21 -> 'B' key ; .word SwitchNextBank-1
+   659 E3C0 32 E5			.word DoNothing-1
+   660 E3C2 32 E5			.word DoNothing-1
+   661 E3C4 55 E4			.word HandleKey_4-1		; 24 -> '4' key
+   662 E3C6 32 E5			.word DoNothing-1
+   663 E3C8 3F E4			.word HandleKey_3-1		; 26 -> '3' key
+   664 E3CA 81 E4			.word HandleKey_6-1		; 27 -> '6' key
+   665 E3CC 25 E6			.word ReturnToDOS-1		; 28 -> 'Escape' key
+   666 E3CE 6B E4			.word HandleKey_5-1		; 29 -> '5' key
+   667 E3D0 29 E4			.word HandleKey_2-1		; 30 -> '2' key
+   668 E3D2 13 E4			.word HandleKey_1-1		; 31 -> '1' key
+   669 E3D4 32 E5			.word DoNothing-1
+   670 E3D6 02 E6			.word toggle_rasterbar-1	; 33 -> 'Spacebar' key
+   671 E3D8 32 E5			.word DoNothing-1
+   672 E3DA 1A E6			.word toggle_dli-1		; 35 -> 'N' key
+   673 E3DC 32 E5			.word DoNothing-1
+   674 E3DE 10 E6			.word toggle_pokey_mode-1	; 37 -> 'M' key
+   675 E3E0 32 E5			.word DoNothing-1
+   676 E3E2 32 E5			.word DoNothing-1
+   677 E3E4 D1 E5			.word toggle_vumeter-1		; 40 -> 'R' key
+   678 E3E6 32 E5			.word DoNothing-1
+   679 E3E8 32 E5			.word DoNothing-1
+   680 E3EA 32 E5			.word DoNothing-1
+   681 E3EC 32 E5			.word DoNothing-1
+   682 E3EE 32 E5			.word DoNothing-1
+   683 E3F0 32 E5			.word DoNothing-1
+   684 E3F2 32 E5			.word DoNothing-1
+   685 E3F4 C3 E4			.word HandleKey_9-1		; 48 -> '9' key
+   686 E3F6 32 E5			.word DoNothing-1
+   687 E3F8 D4 E4			.word HandleKey_0-1		; 50 -> '0' key
+   688 E3FA 97 E4			.word HandleKey_7-1		; 51 -> '7' key
+   689 E3FC 32 E5			.word DoNothing-1
+   690 E3FE AD E4			.word HandleKey_8-1		; 53 -> '8' key
+   691 E400 32 E5			.word DoNothing-1
+   692 E402 32 E5			.word DoNothing-1
+   693 E404 E5 E4			.word HandleKey_F-1		; 56 -> 'F' key
+   694 E406 32 E5			.word DoNothing-1
+   695 E408 97 E5			.word inc_index_selection-1	; 58 -> 'D' key
+   696 E40A 32 E5			.word DoNothing-1
+   697 E40C 32 E5			.word DoNothing-1
+   698 E40E 32 E5			.word DoNothing-1
+   699 E410 32 E5			.word DoNothing-1
+   700 E412 97 E5			.word dec_index_selection-1	; 63 -> 'A' key
+   701
+   702 E414			HandleKey_1:
+   703 E414 20 16 E5			jsr CheckForShiftAndCtrlPressed
+   704 E417 B0 0A			bcs HandleKey_1_a
+   705 E419 D0 03 4C 80 E5		sne:jmp seek_reverse
+   706 E41E A2 00			ldx #0
+   707 E420 4C F0 E4			jmp UpdateVolumeLevel
+   708 					
+   709 E423			HandleKey_1_a:
+   710 E423 A5 C4			lda ZPLZS.VolumeMask
+   711 E425 49 10			eor #%00010000
+   712 E427 85 C4			sta ZPLZS.VolumeMask
+   713 E429 60				rts
+   714 					
+   715 E42A			HandleKey_2:
+   716 E42A 20 16 E5			jsr CheckForShiftAndCtrlPressed
+   717 E42D B0 0A			bcs HandleKey_2_a
+   718 E42F D0 03 4C 8A E5		sne:jmp seek_forward
+   719 E434 A2 01			ldx #1
+   720 E436 4C F0 E4			jmp UpdateVolumeLevel
+   721 					
+   722 E439			HandleKey_2_a:
+   723 E439 A5 C4			lda ZPLZS.VolumeMask
+   724 E43B 49 20			eor #%00100000
+   725 E43D 85 C4			sta ZPLZS.VolumeMask
+   726 E43F 60				rts
+   727
+   728 E440			HandleKey_3:
+   729 E440 20 16 E5			jsr CheckForShiftAndCtrlPressed
+   730 E443 B0 0A			bcs HandleKey_3_a
+   731 E445 D0 03 4C 99 E5		sne:jmp fast_reverse
+   732 E44A A2 02			ldx #2
+   733 E44C 4C F0 E4			jmp UpdateVolumeLevel
+   734 					
+   735 E44F			HandleKey_3_a:
+   736 E44F A5 C4			lda ZPLZS.VolumeMask
+   737 E451 49 40			eor #%01000000
+   738 E453 85 C4			sta ZPLZS.VolumeMask
+   739 E455 60				rts
+   740
+   741 E456			HandleKey_4:
+   742 E456 20 16 E5			jsr CheckForShiftAndCtrlPressed
+   743 E459 B0 0A			bcs HandleKey_4_a
+   744 E45B D0 03 4C A0 E5		sne:jmp fast_forward
+   745 E460 A2 03			ldx #3
+   746 E462 4C F0 E4			jmp UpdateVolumeLevel
+   747 					
+   748 E465			HandleKey_4_a:
+   749 E465 A5 C4			lda ZPLZS.VolumeMask
+   750 E467 49 80			eor #%10000000
+   751 E469 85 C4			sta ZPLZS.VolumeMask
+   752 E46B 60				rts
+   753
+   754 E46C			HandleKey_5:
+   755 E46C 20 16 E5			jsr CheckForShiftAndCtrlPressed
+   756 E46F B0 0A			bcs HandleKey_5_a
+   757 E471 D0 03 4C A7 E5		sne:jmp fast_reverse2
+   758 E476 A2 04			ldx #4
+   759 E478 4C F0 E4			jmp UpdateVolumeLevel
+   760 					
+   761 E47B			HandleKey_5_a:
+   762 E47B A5 C4			lda ZPLZS.VolumeMask
+   763 E47D 49 01			eor #%00000001
+   764 E47F 85 C4			sta ZPLZS.VolumeMask
+   765 E481 60				rts
+   766
+   767 E482			HandleKey_6:
+   768 E482 20 16 E5			jsr CheckForShiftAndCtrlPressed
+   769 E485 B0 0A			bcs HandleKey_6_a
+   770 E487 D0 03 4C AE E5		sne:jmp fast_forward2
+   771 E48C A2 05			ldx #5
+   772 E48E 4C F0 E4			jmp UpdateVolumeLevel
+   773 					
+   774 E491			HandleKey_6_a:
+   775 E491 A5 C4			lda ZPLZS.VolumeMask
+   776 E493 49 02			eor #%00000010
+   777 E495 85 C4			sta ZPLZS.VolumeMask
+   778 E497 60				rts
+   779
+   780 E498			HandleKey_7:
+   781 E498 20 16 E5			jsr CheckForShiftAndCtrlPressed
+   782 E49B B0 0A			bcs HandleKey_7_a
+   783 E49D D0 03 4C B5 E5		sne:jmp fast_reverse3
+   784 E4A2 A2 06			ldx #6
+   785 E4A4 4C F0 E4			jmp UpdateVolumeLevel
+   786 					
+   787 E4A7			HandleKey_7_a:
+   788 E4A7 A5 C4			lda ZPLZS.VolumeMask
+   789 E4A9 49 04			eor #%00000100
+   790 E4AB 85 C4			sta ZPLZS.VolumeMask
+   791 E4AD 60				rts
+   792
+   793 E4AE			HandleKey_8:
+   794 E4AE 20 16 E5			jsr CheckForShiftAndCtrlPressed
+   795 E4B1 B0 0A			bcs HandleKey_8_a
+   796 E4B3 D0 03 4C B8 E5		sne:jmp fast_forward3
+   797 E4B8 A2 07			ldx #7
+   798 E4BA 4C F0 E4			jmp UpdateVolumeLevel
+   799 					
+   800 E4BD			HandleKey_8_a:
+   801 E4BD A5 C4			lda ZPLZS.VolumeMask
+   802 E4BF 49 08			eor #%00001000
+   803 E4C1 85 C4			sta ZPLZS.VolumeMask
+   804 E4C3 60				rts
+   805
+   806 E4C4			HandleKey_9:
+   807 E4C4 2C 09 D2			bit KBCODE
+   808 E4C7 30 03 4C C6 E5		smi:jmp set_speed_down
+   809 E4CC A9 FF			lda #%11111111
+   810 E4CE 50 02 A9 69			svc:lda #%01101001
+   811 E4D2 85 C4			sta ZPLZS.VolumeMask
+   812 E4D4 60				rts
+   813
+   814 E4D5			HandleKey_0:
+   815 E4D5 2C 09 D2			bit KBCODE
+   816 E4D8 30 03 4C BB E5		smi:jmp set_speed_up
+   817 E4DD A9 00			lda #%00000000
+   818 E4DF 50 02 A9 96			svc:lda #%10010110
+   819 E4E3 85 C4			sta ZPLZS.VolumeMask
+   820 E4E5 60				rts
+   821 					
+   822 E4E6			HandleKey_F:
+   823 E4E6 24 C1			bit ZPLZS.FadingOut
+   824 E4E8 30 05			bmi HandleKey_F_Done
+   825 E4EA 20 1B EB			jsr trigger_fade_immediate
+   826 E4ED C6 C2			dec ZPLZS.StopOnFadeout
+   827 					
+   828 E4EF			HandleKey_F_Done:
+   829 E4EF 60				rts
+   830 				.endp
+   831
+   832
+   833 E4F0			.proc UpdateVolumeLevel
+   834 E4F0 2C 09 D2			bit KBCODE
+   835 E4F3 30 10			bmi UpdateVolumeLevelDecrement
+   836 					
+   837 E4F5			UpdateVolumeLevelIncrement:
+   838 E4F5 F6 C5			inc ZPLZS.VolumeLevel,x
+   839 E4F7 B5 C5			lda ZPLZS.VolumeLevel,x
+   840 E4F9 C9 F0			cmp #$F0
+   841 E4FB B0 18			bcs UpdateVolumeLevelDone
+   842 E4FD C9 10			cmp #$10
+   843 E4FF 90 14			bcc UpdateVolumeLevelDone
+   844 E501 A9 0F			lda #$0F
+   845 E503 10 0E			bpl UpdateVolumeLevelSet
+   846
+   847 E505			UpdateVolumeLevelDecrement:
+   848 E505 D6 C5			dec ZPLZS.VolumeLevel,x
+   849 E507 B5 C5			lda ZPLZS.VolumeLevel,x
+   850 E509 C9 F0			cmp #$F0
+   851 E50B B0 08			bcs UpdateVolumeLevelDone
+   852 E50D C9 10			cmp #$10
+   853 E50F 90 04			bcc UpdateVolumeLevelDone
+   854 E511 A9 F0			lda #$F0
+   855 					
+   856 E513			UpdateVolumeLevelSet:
+   857 E513 95 C5			sta ZPLZS.VolumeLevel,x
+   858
+   859 E515			UpdateVolumeLevelDone:
+   860 E515 60				rts
+   861 				.endp
+   862
+   863 				;* Check for SHIFT and CTRL keys being held down
+   864 				;* Status Flags will be returned accordingly
+   865 				;* Carry Flag Set -> Both keys are pressed at once
+   866 				;* Zero Flag Set -> Neither keys are pressed, since only Carry is checked for both keys specifically
+   867 				;* Zero Flag Clear -> At least one key is pressed, regardless of which
+   868
+   869 E516			.proc CheckForShiftAndCtrlPressed
+   870 E516 18				clc
+   871 E517 AD 09 D2			lda KBCODE
+   872 E51A 29 C0			and #%11000000
+   873 E51C F0 02			beq CheckForShiftAndCtrlPressedDone
+   874 E51E C9 C0			cmp #%11000000
+   875 					
+   876 E520			CheckForShiftAndCtrlPressedDone:
+   877 E520 60				rts
+   878 				.endp
+   879 					
+   880 				;* ----------------------------------------------------------------------------
+   881
+   882 				;* General procedure for handling Jump Tables
+   883 				;* Tables must be stored with a -1 offset right after the JSR to this Subroutine
+   884 				;* Execution flow will resume like normal after the RTS hijack
+   885
+   886 E521			.proc TableJump
+   887 E521 0A				asl @
+   888 E522 A8				tay
+   889 E523 C8				iny
+   890 E524 C8				iny
+   891 E525 68				pla
+   892 E526 85 82			sta ZPLZS.TMP2
+   893 E528 68				pla
+   894 E529 85 83			sta ZPLZS.TMP3
+   895 E52B B1 82			lda (ZPLZS.TMP2),y
+   896 E52D 48				pha
+   897 E52E 88				dey
+   898 E52F B1 82			lda (ZPLZS.TMP2),y
+   899 E531 48				pha
+   900 E532 60				rts
+   901 				.endp
+   902
+   903 				;* ----------------------------------------------------------------------------
+   904
+   905 				;* A Subroutine that does absolutely nothing, intended for a Jump Table destination
+   906
+   907 E533			.proc DoNothing
+   908 E533 60				rts
+   909 				.endp
+   910
+   911 				;* ----------------------------------------------------------------------------
+   912
+   913 				/*
+   914 				.proc SwitchNextBank
+   915 					ldx ZPLZS.MemBank
+   916 					inx
+   917 					cpx #33
+   918 					scc:ldx #0
+   919 					stx ZPLZS.MemBank
+   920 					bpl BankSwitch
+   921 				.endp
+   922
+   923 				.proc BankSwitch
+   924 					dex
+   925 					bpl BankSwitch_a
+   926 					lda #%11111110
+   927 					bmi BankSwitch_b
+   928 					
+   929 				BankSwitch_a:
+   930 					txa
+   931 					and #%00000011
+   932 					:2 asl @
+   933 					ora #%00000010
+   934 					sta ZPLZS.TMP2
+   935 					txa
+   936 					and #%00011100
+   937 					:3 asl @
+   938 					ora ZPLZS.TMP2
+   939
+   940 				BankSwitch_b:
+   941 					sta PORTB
+   942 					rts
+   943 				.endp
+   944 				*/
+   944
+   945
+   946 				;* ----------------------------------------------------------------------------
+   947
+   948 				;* Advance Playback for 1 Frame, at Playback Speed rate
+   949 				;* Playback will be set to "Paused", regardless of its previous Status
+   950 				;* Timing may be thrown off, but this should be close enough
+   951
+   952 E534			.proc FrameAdvance
+   953 E534 24 C3			bit ZPLZS.PlayerStatus
+   954 E536 70 03 4C DE EA		svs:jmp set_pause
+   955 					
+   956 E53B			FrameAdvance_a:
+   957 E53B A5 BB			lda ZPLZS.SongSpeed
+   958 E53D 85 82			sta ZPLZS.TMP2
+   959 					
+   960 E53F			FrameAdvance_b:
+   961 E53F 20 EA E8			jsr LZSSPlayFrame
+   962 E542 90 03 20 E3 E9		scc:jsr SetNewSongPtrs
+   963 				;	jsr CheckForTwoToneBit
+   964 				;	jsr SetVolumeFadeout
+   965 E547 20 79 EB			jsr SwapBufferCopy
+   966 				;	jsr SetVolumeMask
+   967 E54A C6 82			dec ZPLZS.TMP2
+   968 E54C 10 F1			bpl FrameAdvance_b
+   969 					
+   970 E54E			FrameAdvance_c:
+   971 E54E C6 D1			dec ZPLZS.TimerOffset
+   972 E550 F0 1E			beq FrameAdvance_g
+   973 E552 10 08			bpl FrameAdvance_d
+   974 E554 A5 CE			lda ZPLZS.MachineRegion
+   975 E556 F0 02 A9 05			seq:lda #5
+   976 E55A 85 D1			sta ZPLZS.TimerOffset
+   977 					
+   978 E55C			FrameAdvance_d:
+   979 E55C 20 22 EB			jsr CalculateTime
+   980 E55F 20 99 E8			jsr set_progress_bar
+   981 					
+   982 E562			FrameAdvance_e:
+   983 E562 20 3D EA			jsr UpdateVolumeFadeout
+   984 E565 24 C3			bit ZPLZS.PlayerStatus
+   985 E567 10 07			bpl FrameAdvance_g
+   986 E569 24 C2			bit ZPLZS.StopOnFadeout
+   987 E56B 30 03			bmi FrameAdvance_g
+   988 					
+   989 E56D			FrameAdvance_f:
+   990 E56D 20 8A E5			jsr seek_forward
+   991 					
+   992 E570			FrameAdvance_g:
+   993 E570 20 6F EA			jsr setpokeyfull
+   994 					
+   995 E573			FrameAdvance_h:
+   996 E573 A5 C3			lda ZPLZS.PlayerStatus
+   997 E575 48				pha
+   998 E576 20 16 EB			jsr set_play
+   999 E579 20 FF E7			jsr begindraw
+  1000 E57C 68				pla
+  1001 E57D 85 C3			sta ZPLZS.PlayerStatus
+  1002 					
+  1003 E57F			FrameAdvanceDone:
+  1004 E57F 60				rts
+  1005 				.endp
+  1006
+  1007 				;* ----------------------------------------------------------------------------
+  1008
+  1009 				; seek forward and reverse, both use the initialised flag + the new song pointers subroutine to perform it quickly
+  1010 				; reverse will land in the forward code, due to the way the song pointers are initialised
+  1011 				; forward doesn't even need to increment the index!
+  1012
+  1013 E580			seek_reverse
+  1014 E580 A6 B9			ldx ZPLZS.SongIndex
+  1015 E582 CA				dex
+  1016 E583 10 0E			bpl seek_done	
+  1017 E585			seek_wraparound
+  1018 E585 A6 BA			ldx ZPLZS.SongCount
+  1019 E587 CA				dex 
+  1020 E588 D0 09			bne seek_done
+  1021 E58A			seek_forward
+  1022 E58A A6 B9			ldx ZPLZS.SongIndex
+  1023 E58C E8				inx 
+  1024 E58D E4 BA			cpx ZPLZS.SongCount
+  1025 E58F 90 02			bcc seek_done
+  1026 E591 A2 00			ldx #0
+  1027 E593			seek_done
+  1028 E593 86 B9			stx ZPLZS.SongIndex
+  1029 E595 C6 E0			dec ZPLZS.ProgramStatus		; Force a Reset within Main Loop
+  1030 E597 60				rts
+  1031 					
+  1032 				;-----------------
+  1033
+  1034 				; index_selection 
+  1035
+  1036 E598			dec_index_selection
+  1037 E598			inc_index_selection
+  1038 E598 60				rts
+  1039 					
+  1040 				/*
+  1041 				dec_index_selection
+  1042 					ldx button_selection_flag
+  1043 					dex 				; decrement the index
+  1044 					bpl done_index_selection	; if the value did not underflow, done 
+  1045 					ldx #6				; if it went past the boundaries, load the last valid index to wrap around
+  1046 					bpl done_index_selection	; unconditional
+  1047 				inc_index_selection
+  1048 					ldx button_selection_flag
+  1049 					inx				; increment the index
+  1050 					cpx #7				; compare to the maximum of 7 button indexes
+  1051 					bcc done_index_selection	; if below 7, everything is good
+  1052 					ldx #0				; else, load 0 to wrap around
+  1053 				done_index_selection
+  1054 					stx button_selection_flag 	; overwrite the index value
+  1055 					rts
+  1056 				*/
+  1056
+  1057
+  1058 				;-----------------
+  1059
+  1060 				; timing modifyer inputs, only useful for debugging 
+  1061
+  1062 E599			fast_reverse
+  1063 E599 E6 DA			inc ZPLZS.SyncDivision
+  1064 E59B D0 02 C6 DA			sne:dec ZPLZS.SyncDivision
+  1065 E59F 60				rts
+  1066 E5A0			fast_forward
+  1067 E5A0 C6 DA			dec ZPLZS.SyncDivision
+  1068 E5A2 D0 02 E6 DA			sne:inc ZPLZS.SyncDivision
+  1069 E5A6 60				rts 
+  1070 E5A7			fast_reverse2
+  1071 E5A7 E6 D7			inc ZPLZS.SyncCount
+  1072 E5A9 D0 02 C6 D7			sne:dec ZPLZS.SyncCount
+  1073 E5AD 60				rts
+  1074 E5AE			fast_forward2
+  1075 E5AE C6 D7			dec ZPLZS.SyncCount
+  1076 E5B0 D0 02 E6 D7			sne:inc ZPLZS.SyncCount
+  1077 E5B4 60				rts 
+  1078 E5B5			fast_reverse3
+  1079 E5B5 E6 D6			inc ZPLZS.LastCount
+  1080 				/*
+  1081 					lda ZPLZS.SyncOffset
+  1082 					clc
+  1083 					adc ZPLZS.SyncDivision
+  1084 					sta ZPLZS.SyncOffset
+  1085 					lda #0
+  1086 					sta ZPLZS.SyncStatus
+  1087 				*/
+  1087
+  1088 E5B7 60				rts
+  1089 E5B8			fast_forward3	
+  1090 E5B8 C6 D6			dec ZPLZS.LastCount
+  1091 				/*
+  1092 					lda ZPLZS.SyncOffset
+  1093 					sec
+  1094 					sbc ZPLZS.SyncDivision
+  1095 					sta ZPLZS.SyncOffset
+  1096 					lda #0
+  1097 					sta ZPLZS.SyncStatus
+  1098 				*/
+  1098
+  1099 E5BA 60				rts
+  1100 					
+  1101 				;-----------------
+  1102
+  1103 E5BB			set_speed_up
+  1104 E5BB A4 BB			ldy ZPLZS.SongSpeed
+  1105 E5BD C8				iny
+  1106 E5BE C0 08			cpy #8
+  1107 E5C0 90 0B			bcc set_speed_next
+  1108 E5C2 A0 00			ldy #0
+  1109 E5C4 F0 07			beq set_speed_next
+  1110 E5C6			set_speed_down
+  1111 E5C6 A4 BB			ldy ZPLZS.SongSpeed
+  1112 E5C8 88				dey 
+  1113 E5C9 10 02			bpl set_speed_next
+  1114 E5CB A0 07			ldy #7
+  1115 E5CD			set_speed_next	
+  1116 E5CD 84 BB			sty ZPLZS.SongSpeed
+  1117 E5CF 4C 48 E2			jmp SetPlaybackSpeed
+  1118
+  1119 				;-----------------
+  1120
+  1121 E5D2			toggle_vumeter
+  1122 E5D2 A9 FF			lda #$FF			; vumeter flag, 0 is vumeter, else FF displays the POKEY registers
+  1123 = E5D3			vumeter_toggle equ *-1			; FIXME: Rename and move to Zeropage variables
+  1124 E5D4 49 FF			eor #$FF			; invert bits 
+  1125 E5D6 8D D3 E5			sta vumeter_toggle		; overwrite the flag with the new value
+  1126 E5D9 30 0E			bmi set_register_view
+  1127 E5DB			set_vumeter_view	
+  1128 E5DB A9 18 8D 7B DF A9 + 	mwa #mode_6 mode6_toggle
+  1129 E5E5 A9 44			lda #$44
+  1130 E5E7 10 0C			bpl set_view_addresses
+  1131 E5E9			set_register_view
+  1132 E5E9 A9 B8 8D 7B DF A9 + 	mwa #POKE1 mode6_toggle
+  1133 E5F3 A9 42			lda #$42
+  1134 E5F5			set_view_addresses
+  1135 E5F5 8D 7A DF			sta mode6_toggle-1
+  1136 E5F8 29 0F			and #$0F
+  1137 E5FA A2 02			ldx #2
+  1138 E5FC			set_view_addresses_loop
+  1139 E5FC 9D 7D DF			sta mode6_toggle+2,x
+  1140 E5FF CA				dex
+  1141 E600 10 FA			bpl set_view_addresses_loop
+  1142 E602 60				rts
+  1143
+  1144 				;-----------------
+  1145 					
+  1146 E603			toggle_rasterbar
+  1147 E603 A5 DB			lda ZPLZS.RasterbarToggle	; Rasterbar toggle flag
+  1148 E605 49 80			eor #%10000000			; Invert Bit 7
+  1149 E607 85 DB			sta ZPLZS.RasterbarToggle	; Overwrite with the new value
+  1150 E609 60				rts 
+  1151 					
+  1152 				;-----------------
+  1153
+  1154 E60A			toggle_loop
+  1155 E60A A5 C0			lda ZPLZS.LoopCount		; Loop counter and flag
+  1156 E60C 49 80			eor #%10000000			; Invert Bit 7
+  1157 E60E 85 C0			sta ZPLZS.LoopCount		; Overwrite with the new value
+  1158 E610 60				rts 
+  1159 					
+  1160 				;-----------------
+  1161
+  1162 E611			toggle_pokey_mode
+  1163 E611 A5 DF			lda ZPLZS.DMAToggle
+  1164 E613 49 22			eor #$22
+  1165 E615 85 DF			sta ZPLZS.DMAToggle
+  1166 E617 8D 00 D4			sta DMACTL
+  1167 E61A 60				rts
+  1168 					
+  1169 				;-----------------
+  1170
+  1171 E61B			toggle_dli
+  1172 E61B A9 C0			lda #$C0 
+  1173 = E61C			dli_toggler equ *-1			; FIXME: Rename and move to Zeropage variables
+  1174 E61D 49 80			eor #$80
+  1175 E61F 8D 1C E6			sta dli_toggler
+  1176 E622 8D 0E D4			sta NMIEN
+  1177 E625 60				rts
+  1178
+  1179 				;-----------------
+  1180
+  1181 				; stop and quit
+  1182
+  1183 E626			.proc ReturnToDOS
+  1184 E626 20 5D EA			jsr stop_pause_reset
+  1185 E629 20 6F EA			jsr setpokeyfull
+  1186 E62C A6 E1			ldx ZPLZS.StackPointer
+  1187 E62E 9A				txs
+  1188 E62F A9 8D 85 80			mva #$8D ZPLZS.TMP0
+  1189 E633 A9 01 85 81 A9 D3 + 	mwa #PORTB ZPLZS.TMP1
+  1190 E63B A9 60 85 83			mva #$60 ZPLZS.TMP3
+  1191 E63F A9 FF			lda #%11111111
+  1192 E641 4C 80 00			jmp ZPLZS.TMP0
+  1193 				.endp
+  1194
+  1195 				;----------------- 
+  1196
+  1197 				;* menu buttons highlight subroutine
+  1198
+  1199 E644			set_highlight 
+  1200 E644 A2 06			ldx #6				; 7 buttons to index
+  1201 E646			set_highlight_a
+  1202 E646 8A				txa 				; transfer to accumulator
+  1203 E647 0A				asl @				; multiply by 2
+  1204 E648 A8				tay 				; transfer to Y, use to index the values directly
+  1205 E649 B9 39 DF			lda b_handler,y			; load the character from this location
+  1206 E64C 10 05			bpl set_highlight_b		; positive -> no highlight, skip overwriting it
+  1207 E64E 49 80			eor #$80 			; invert the character
+  1208 E650 99 39 DF			sta b_handler,y			; overwrite, no highlight to see again 
+  1209 E653			set_highlight_b
+  1210 E653 CA				dex 				; decrease the index and load the next character using it
+  1211 E654 10 F0			bpl set_highlight_a		; as long as X is positive, do this again until all characters were reset 
+  1212 E656			set_highlight_c 
+  1213 				;	lda button_selection_flag	; load the button flag value previously set in memory
+  1214 E656 A5 DE			lda ZPLZS.PlayerMenuIndex
+  1215 E658 0A				asl @				; multiply it by 2 for the index 
+  1216 E659 A8				tay				; transfer to Y, use it to index the character directly
+  1217 E65A B9 39 DF			lda b_handler,y 		; load the character in memory 
+  1218 E65D 49 80			eor #$80 			; invert the character, this will now define it as "highlighted"
+  1219 E65F 99 39 DF			sta b_handler,y 		; write the character in memory, it is now selected, and will be processed again later 
+  1220 E662 60				rts
+  1221
+  1222 				;-----------------
+  1223
+  1224 				;* TODO: Add Frames Calculations? Maybe Time?
+  1225
+  1226 E663			PrintSongInfos:
+  1227 E663 A9 00 85 82 A9 DC + 	mwa #line_0 ZPLZS.TMP2 ; DISPLAY	; initialise the Display List indirect memory address for later
+  1228 E66B A0 04			ldy #4			; 4 characters buffer 
+  1229 E66D A6 BB			ldx ZPLZS.SongSpeed
+  1230 E66F E8				inx
+  1231 E670 8A				txa
+  1232 E671 20 C4 E2			jsr printhex_direct
+  1233 E674 A9 00			lda #0
+  1234 E676 88				dey			; Y = 4 here, no need to reload it
+  1235 E677 91 82			sta (ZPLZS.TMP2),y ; sta (DISPLAY),y 
+  1236 E679 B9 AF DF 99 05 DC + 	mva:rne txt_VBI-1,y line_0+5,y-
+  1237 E682 A0 04			ldy #4			; 4 characters buffer
+  1238 E684 A5 CE			lda ZPLZS.MachineRegion
+  1239 E686 0A				asl @
+  1240 E687 0A				asl @
+  1241 E688 69 04			adc #4
+  1242 E68A AA				tax
+  1243 E68B BD A7 DF CA 99 FF + 	mva:rne txt_REGION-1,x- line_0-1,y-
+  1244 E695 A0 08			ldy #8			; 8 characters buffer
+  1245 E697 A5 BD			lda ZPLZS.SongStereo
+  1246 E699 0A				asl @
+  1247 E69A 0A				asl @
+  1248 E69B 0A				asl @
+  1249 E69C 69 08			adc #8
+  1250 E69E AA				tax
+  1251 E69F BD B3 DF CA 99 09 + 	mva:rne txt_STEREO-1,x- line_0+9,y-
+  1252 E6A9 60				rts
+  1253 					
+  1254 				;-----------------
+  1255
+  1256 				;* print most infos on screen
+  1257 					
+  1258 E6AA			print_player_infos
+  1259 E6AA A9 80 85 82 A9 DE + 	mwa #line_0a ZPLZS.TMP2 ; DISPLAY 	; get the right screen position
+  1260 					
+  1261 E6B2			print_minutes
+  1262 E6B2 A0 08			ldy #8
+  1263 E6B4 A5 D4			lda ZPLZS.Minutes
+  1264 E6B6 20 EA E2			jsr hex2dec_convert
+  1265 E6B9 20 C4 E2			jsr printhex_direct
+  1266 E6BC			print_seconds
+  1267 E6BC C8				iny
+  1268 E6BD A5 D3			lda ZPLZS.Seconds
+  1269 E6BF 29 01			and #1
+  1270 E6C1 F0 04			beq no_blink 
+  1271 E6C3 A9 00			lda #0
+  1272 E6C5 F0 02			beq blink
+  1273 E6C7			no_blink 
+  1274 E6C7 A9 1A			lda #":" 
+  1275 E6C9			blink
+  1276 E6C9 91 82			sta (ZPLZS.TMP2),y ; sta (DISPLAY),y 
+  1277 E6CB C8				iny 
+  1278 E6CC A5 D3			lda ZPLZS.Seconds
+  1279 E6CE 20 EA E2			jsr hex2dec_convert
+  1280 E6D1 20 C4 E2			jsr printhex_direct
+  1281 E6D4 C8				iny
+  1282 E6D5 C8				iny
+  1283 E6D6 A5 D2			lda ZPLZS.Frames
+  1284 E6D8 0A				asl @
+  1285 E6D9 20 EA E2			jsr hex2dec_convert
+  1286 E6DC 20 C4 E2			jsr printhex_direct
+  1287 					
+  1288 E6DF			print_loop
+  1289 E6DF A0 AE			ldy #174
+  1290 E6E1 A5 C0			lda ZPLZS.LoopCount	; verify if the loop flag is set to update the graphics accordingly
+  1291 E6E3 30 04			bmi yes_loop		; it *should* be 0 if not looping, it will be overwritten anyway
+  1292 E6E5 A9 00			lda #0
+  1293 E6E7 F0 02			beq no_loop
+  1294 E6E9			yes_loop
+  1295 E6E9 A9 0A			lda #"*" 
+  1296 E6EB			no_loop
+  1297 E6EB 91 82			sta (ZPLZS.TMP2),y ; sta (DISPLAY),y
+  1298 					
+  1299 E6ED			Print_pointers
+  1300 E6ED A0 1C			ldy #28
+  1301 E6EF A5 89			lda ZPLZS.BufferPointer+1
+  1302 E6F1 20 C4 E2			jsr printhex_direct
+  1303 E6F4 C8				iny
+  1304 E6F5 A5 88			lda ZPLZS.BufferPointer+0
+  1305 E6F7 20 C4 E2			jsr printhex_direct	
+  1306 E6FA A0 22			ldy #34
+  1307 E6FC A5 87			lda ZPLZS.BufferEnd+1
+  1308 E6FE 20 C4 E2			jsr printhex_direct
+  1309 E701 C8				iny
+  1310 E702 A5 86			lda ZPLZS.BufferEnd+0
+  1311 E704 20 C4 E2			jsr printhex_direct
+  1312 					
+  1313 E707 A0 39			ldy #57
+  1314 E709 A5 BE			lda ZPLZS.SongSequence
+  1315 E70B 20 C4 E2			jsr printhex_direct
+  1316 E70E A0 3E			ldy #62
+  1317 E710 A5 BF			lda ZPLZS.SongSection
+  1318 E712 20 C4 E2			jsr printhex_direct
+  1319 E715 A0 43			ldy #67
+  1320 E717 A5 C0			lda ZPLZS.LoopCount
+  1321 E719 20 C4 E2			jsr printhex_direct
+  1322 E71C A0 48			ldy #72
+  1323 E71E A5 C1			lda ZPLZS.FadingOut
+  1324 E720 20 C4 E2			jsr printhex_direct
+  1325 E723 A0 4D			ldy #77
+  1326 E725 A5 C2			lda ZPLZS.StopOnFadeout
+  1327 E727 20 C4 E2			jsr printhex_direct
+  1328 					
+  1329 E72A A0 7A			ldy #122
+  1330 E72C A5 C5			lda ZPLZS.VolumeLevel+0
+  1331 E72E 20 C4 E2			jsr printhex_direct
+  1332 E731 C8 C8			:2 iny
+  1333 E733 A5 C6			lda ZPLZS.VolumeLevel+1
+  1334 E735 20 C4 E2			jsr printhex_direct
+  1335 E738 C8 C8			:2 iny
+  1336 E73A A5 C7			lda ZPLZS.VolumeLevel+2
+  1337 E73C 20 C4 E2			jsr printhex_direct
+  1338 E73F C8 C8			:2 iny
+  1339 E741 A5 C8			lda ZPLZS.VolumeLevel+3
+  1340 E743 20 C4 E2			jsr printhex_direct
+  1341 E746 C8 C8 C8 C8			:4 iny
+  1342 E74A A5 C9			lda ZPLZS.VolumeLevel+4
+  1343 E74C 20 C4 E2			jsr printhex_direct
+  1344 E74F C8 C8			:2 iny
+  1345 E751 A5 CA			lda ZPLZS.VolumeLevel+5
+  1346 E753 20 C4 E2			jsr printhex_direct
+  1347 E756 C8 C8			:2 iny
+  1348 E758 A5 CB			lda ZPLZS.VolumeLevel+6
+  1349 E75A 20 C4 E2			jsr printhex_direct
+  1350 E75D C8 C8			:2 iny
+  1351 E75F A5 CC			lda ZPLZS.VolumeLevel+7
+  1352 E761 20 C4 E2			jsr printhex_direct
+  1353 					
+  1354 E764 A5 C4			lda ZPLZS.VolumeMask
+  1355 E766 8D 8C E7			sta printvolumemask
+  1356 E769 A0 2E			ldy #46
+  1357 E76B A2 03			ldx #3
+  1358 					
+  1359 E76D			printvolumemaskloop1
+  1360 E76D B1 82			lda (ZPLZS.TMP2),y ; lda (DISPLAY),y
+  1361 E76F 0A				asl @
+  1362 E770 0E 8C E7			asl printvolumemask
+  1363 E773 6A				ror @
+  1364 E774 91 82			sta (ZPLZS.TMP2),y ; sta (DISPLAY),y
+  1365 E776 88				dey
+  1366 E777 CA				dex
+  1367 E778 10 F3			bpl printvolumemaskloop1
+  1368 E77A A0 35			ldy #53
+  1369 E77C A2 03			ldx #3
+  1370 					
+  1371 E77E			printvolumemaskloop2
+  1372 E77E B1 82			lda (ZPLZS.TMP2),y ; lda (DISPLAY),y
+  1373 E780 0A				asl @
+  1374 E781 0E 8C E7			asl printvolumemask
+  1375 E784 6A				ror @
+  1376 E785 91 82			sta (ZPLZS.TMP2),y ; sta (DISPLAY),y
+  1377 E787 88				dey
+  1378 E788 CA				dex
+  1379 E789 10 F3			bpl printvolumemaskloop2
+  1380 E78B 60				rts
+  1381 					
+  1382 E78C			printvolumemask
+  1383 E78C 00				.byte $00	; temporary workaround, variable in zeropage was already used...
+  1384 					
+  1385 				;-----------------
+  1386
+  1387 E78D			test_vumeter_toggle
+  1388 E78D AD D3 E5			lda vumeter_toggle	; the toggle flag will set which direction the scrolling goes
+  1389 E790 10 03			bpl do_begindraw	; positive flag, VU Meter, else, POKEY registers, it will be one or the other
+  1390 E792			do_draw_registers
+  1391 E792 4C 98 E7			jmp draw_registers	; end with a RTS
+  1392 E795			do_begindraw
+  1393 E795 4C FF E7			jmp begindraw		; end with a RTS
+  1394
+  1395 				;-----------------
+  1396
+  1397 				;* draw POKEY registers
+  1398 				;* this is incredibly crappy code but it gets the job done...
+  1399
+  1400 E798			draw_registers
+  1401 E798 A9 E0 85 82 A9 DD + 	mwa #POKE2 ZPLZS.TMP2 ; DISPLAY	; set the position on screen
+  1402 E7A0 A2 00			ldx #0
+  1403 E7A2 A0 07			ldy #7
+  1404 E7A4			draw_left_pokey
+  1405 E7A4 B5 E7			lda SDWPOK0,x
+  1406 E7A6 8E B0 E7			stx reload_x_left
+  1407 E7A9 20 C4 E2			jsr printhex_direct
+  1408 E7AC C8 C8 C8			:3 iny
+  1409 E7AF A2 00			ldx #0
+  1410 = E7B0			reload_x_left equ *-1 
+  1411 E7B1 E8 E8			:2 inx
+  1412 E7B3 E0 08			cpx #8
+  1413 E7B5 90 ED			bcc draw_left_pokey
+  1414 E7B7 C0 3C			cpy #60
+  1415 E7B9 B0 06			bcs draw_left_pokey_next
+  1416 E7BB A2 01			ldx #1
+  1417 E7BD A0 2F			ldy #47
+  1418 E7BF 10 E3			bpl draw_left_pokey
+  1419 E7C1			draw_left_pokey_next
+  1420 E7C1 A5 EF			lda SDWPOK0.POKCTL
+  1421 E7C3 A0 5F			ldy #95
+  1422 E7C5 20 C4 E2			jsr printhex_direct
+  1423 				;	lda SDWPOK0.POKSKC
+  1424 E7C8 A5 E5			lda POKSKC+0
+  1425 E7CA A0 63			ldy #99
+  1426 E7CC 20 C4 E2			jsr printhex_direct
+  1427 E7CF A2 00			ldx #0
+  1428 E7D1 A0 19			ldy #25
+  1429 E7D3			draw_right_pokey
+  1430 E7D3 B5 F0			lda SDWPOK1,x
+  1431 E7D5 8E DF E7			stx reload_x_right
+  1432 E7D8 20 C4 E2			jsr printhex_direct
+  1433 E7DB C8 C8 C8			:3 iny
+  1434 E7DE A2 00			ldx #0
+  1435 = E7DF			reload_x_right equ *-1 
+  1436 E7E0 E8 E8			:2 inx
+  1437 E7E2 E0 08			cpx #8
+  1438 E7E4 90 ED			bcc draw_right_pokey
+  1439 E7E6 C0 4F			cpy #79
+  1440 E7E8 B0 06			bcs draw_right_pokey_next
+  1441 E7EA A2 01			ldx #1
+  1442 E7EC A0 41			ldy #65
+  1443 E7EE 10 E3			bpl draw_right_pokey
+  1444 E7F0			draw_right_pokey_next
+  1445 E7F0 A5 F8			lda SDWPOK1.POKCTL
+  1446 E7F2 A0 71			ldy #113
+  1447 E7F4 20 C4 E2			jsr printhex_direct
+  1448 				;	lda SDWPOK1.POKSKC
+  1449 E7F7 A5 E6			lda POKSKC+1
+  1450 E7F9 A0 75			ldy #117
+  1451 E7FB 20 C4 E2			jsr printhex_direct
+  1452 E7FE			draw_registers_done	
+  1453 E7FE 60				rts
+  1454
+  1455 				;-----------------
+  1456
+  1457 				;* Draw the VUMeter display and process all the variables related to it
+  1458
+  1459 E7FF			begindraw
+  1460 E7FF 24 C3			bit ZPLZS.PlayerStatus
+  1461 E801 70 5D			bvs drawloop_done
+  1462 				;	bvc begindraw_a
+  1463 				;	rts
+  1464 					
+  1465 E803			begindraw_a
+  1466 E803 A2 07			ldx #7
+  1467 					
+  1468 E805			begindraw_b
+  1469 E805 B5 E7			lda SDWPOK0-0,x
+  1470 E807 29 0F			and #$0F
+  1471 E809 F0 13			beq begindraw_c
+  1472 E80B 48				pha
+  1473 E80C B5 E6			lda SDWPOK0-1,x
+  1474 E80E 49 FF			eor #$FF
+  1475 E810 4A 4A 4A			:3 lsr @
+  1476 E813 A8				tay
+  1477 E814 68				pla
+  1478 E815 0A				asl @
+  1479 				;	adc #1
+  1480 E816 D9 00 01			cmp ZPVOL.Buffer,y
+  1481 E819 30 03 99 00 01		smi:sta ZPVOL.Buffer,y
+  1482 					
+  1483 E81E			begindraw_c
+  1484 E81E B5 F0			lda SDWPOK1-0,x
+  1485 E820 29 0F			and #$0F
+  1486 E822 F0 13			beq begindraw_d
+  1487 E824 48				pha
+  1488 E825 B5 EF			lda SDWPOK1-1,x
+  1489 E827 49 FF			eor #$FF
+  1490 E829 4A 4A 4A			:3 lsr @
+  1491 E82C A8				tay
+  1492 E82D 68				pla
+  1493 E82E 0A				asl @
+  1494 				;	adc #1
+  1495 E82F D9 00 01			cmp ZPVOL.Buffer,y
+  1496 E832 30 03 99 00 01		smi:sta ZPVOL.Buffer,y
+  1497 					
+  1498 E837			begindraw_d
+  1499 E837 CA CA			:2 dex
+  1500 E839 10 CA			bpl begindraw_b
+  1501 					
+  1502 E83B			drawloop
+  1503 				;	lda ZPLZS.GlobalTimer
+  1504 				;	and #%00000001
+  1505 				;	beq drawloop_done
+  1506
+  1507 E83B			drawloop_a
+  1508 E83B A2 1F			ldx #31
+  1509
+  1510 E83D			drawloop_b
+  1511 E83D BC 00 01			ldy ZPVOL.Buffer,x
+  1512 E840 30 1B			bmi drawloop_d
+  1513 E842 DE 00 01			dec ZPVOL.Buffer,x
+  1514 					
+  1515 E845			drawloop_c
+  1516 E845 B9 61 E8			lda vol_tbl_0,y
+  1517 E848 9D 1C DD			sta mode_6+4,x
+  1518 E84B B9 69 E8			lda vol_tbl_1,y
+  1519 E84E 9D 44 DD			sta mode_6a+4,x
+  1520 E851 B9 71 E8			lda vol_tbl_2,y
+  1521 E854 9D 6C DD			sta mode_6b+4,x
+  1522 E857 B9 79 E8			lda vol_tbl_3,y
+  1523 E85A 9D 94 DD			sta mode_6c+4,x
+  1524 					
+  1525 E85D			drawloop_d
+  1526 E85D CA				dex
+  1527 E85E 10 DD			bpl drawloop_b
+  1528 					
+  1529 E860			drawloop_done
+  1530 E860 60				rts
+  1531 					
+  1532 = 0046			vol_0	equ $46	;+$80
+  1533 = 0047			vol_1	equ $47	;+$80
+  1534 = 0048			vol_2	equ $48	;+$80
+  1535 = 0049			vol_3	equ $49	;+$80
+  1536 = 004A			vol_4	equ $4A	;+$80
+  1537 = 004B			vol_5	equ $4B	;+$80
+  1538 = 004C			vol_6	equ $4C	;+$80
+  1539 = 004D			vol_7	equ $4D	;+$80
+  1540 = 004E			vol_8	equ $4E	;+$80
+  1541
+  1542
+  1543 E861			vol_tbl_0
+  1544 E861 46 46 46 46 46 46 + 	.byte vol_0, vol_0, vol_0, vol_0, vol_0, vol_0, vol_0, vol_0
+  1545 E869			vol_tbl_1
+  1546 E869 46 46 46 46 46 46 + 	.byte vol_0, vol_0, vol_0, vol_0, vol_0, vol_0, vol_0, vol_0
+  1547 E871			vol_tbl_2
+  1548 E871 46 46 46 46 46 46 + 	.byte vol_0, vol_0, vol_0, vol_0, vol_0, vol_0, vol_0, vol_0
+  1549 E879			vol_tbl_3
+  1550 E879 46 47 48 49 4A 4B + 	.byte vol_0, vol_1, vol_2, vol_3, vol_4, vol_5, vol_6, vol_7
+  1551 E881 4E 4E 4E 4E 4E 4E + 	.byte vol_8, vol_8, vol_8, vol_8, vol_8, vol_8, vol_8, vol_8
+  1552 E889 4E 4E 4E 4E 4E 4E + 	.byte vol_8, vol_8, vol_8, vol_8, vol_8, vol_8, vol_8, vol_8
+  1553 E891 4E 4E 4E 4E 4E 4E + 	.byte vol_8, vol_8, vol_8, vol_8, vol_8, vol_8, vol_8, vol_8
+  1554
+  1555 				;-----------------
+  1556
+  1557 				;* An attempt to display the subtune progression on screen with a progress bar and a cursor to nearest point in time
+  1558 				;* There are 32 sections, and 8 subsections within each ones of them, for a total of 256 pixels that could be used with this
+  1559 				;* Roughly, I need to divide a target value by 32 for the coarse movements, then by 8 for the fine movements, I think?
+  1560 				;* The result should then be the value number of bytes per coarse/fine movements, which can then be used to draw the progress bar
+  1561
+  1562 = 0054			bar_cur	equ $54
+  1563 = 005C			bar_lne	equ $5C
+  1564
+  1565 				/*
+  1566 				bar_counter
+  1567 					dta $00,$00,$00
+  1568 				bar_increment
+  1569 					dta $00,$00,$00
+  1570 				bar_loop
+  1571 					dta $00
+  1572 				*/
+  1572
+  1573 					
+  1574 E899			set_progress_bar
+  1575 E899 18				clc
+  1576 E89A A5 FB			lda bar_counter+2
+  1577 E89C 65 FE			adc bar_increment+2
+  1578 E89E 85 FB			sta bar_counter+2
+  1579 E8A0 A5 FA			lda bar_counter+1
+  1580 E8A2 65 FD			adc bar_increment+1
+  1581 E8A4 85 FA			sta bar_counter+1
+  1582 E8A6 A5 F9			lda bar_counter+0
+  1583 E8A8 65 FC			adc bar_increment+0
+  1584 E8AA 90 02 A9 FF			scc:lda #$FF				; bar was maxed out, it won't be updated further
+  1585 E8AE 85 F9			sta bar_counter+0
+  1586 					
+  1587 E8B0			set_progress_bar_done
+  1588 E8B0 60				rts
+  1589 					
+  1590 				;-----------------
+  1591
+  1592 E8B1			draw_progress_bar
+  1593 E8B1 A9 D4 85 82 A9 DE + 	mwa #line_0c+4 ZPLZS.TMP2 ; DISPLAY 
+  1594 E8B9 A5 F9			lda bar_counter+0
+  1595 E8BB AA				tax
+  1596 E8BC 4A				lsr @
+  1597 E8BD 4A				lsr @
+  1598 E8BE 4A				lsr @
+  1599 E8BF A8				tay 
+  1600 E8C0 8D DC E8			sta draw_empty_bar_count
+  1601 E8C3 8A				txa
+  1602 E8C4 29 07			and #$07
+  1603 E8C6 F0 03			beq draw_progress_bar_a
+  1604 E8C8 18				clc 
+  1605 E8C9 69 54			adc #bar_cur
+  1606 E8CB			draw_progress_bar_a
+  1607 E8CB 91 82			sta (ZPLZS.TMP2),y ; sta (DISPLAY),y
+  1608 E8CD 88				dey 
+  1609 E8CE 30 07			bmi draw_progress_bar_below_8
+  1610 E8D0 A9 5C			lda #bar_lne 
+  1611 E8D2			draw_progress_bar_loop1
+  1612 E8D2 91 82			sta (ZPLZS.TMP2),y ; sta (DISPLAY),y
+  1613 E8D4 88				dey 
+  1614 E8D5 10 FB			bpl draw_progress_bar_loop1
+  1615 E8D7			draw_progress_bar_below_8
+  1616 E8D7 A0 1F			ldy #31
+  1617 E8D9 98				tya
+  1618 E8DA 38				sec 
+  1619 E8DB E9 00			sbc #0
+  1620 = E8DC			draw_empty_bar_count equ *-1
+  1621 E8DD AA				tax 
+  1622 E8DE CA				dex 
+  1623 E8DF 30 08			bmi draw_progress_bar_done
+  1624 E8E1 A9 00			lda #0
+  1625 E8E3			draw_progress_bar_loop2
+  1626 E8E3 91 82			sta (ZPLZS.TMP2),y ; sta (DISPLAY),y
+  1627 E8E5 88				dey 
+  1628 E8E6 CA				dex
+  1629 E8E7 10 FA			bpl draw_progress_bar_loop2 
+  1630 E8E9			draw_progress_bar_done
+  1631 E8E9 60				rts
+  1632
+  1633 				;-----------------
+  1634
+  1635 				;------------------------------------------------------------------------------------------------------------------------------------;
+  1636
+  1637 				;* And that's all :D
+  1638
+   109 E8EA			PLAYLZ16
+   110 E8EA					icl "playlzs16-dumb.asm"
+Source: /mnt/7454F1D454F19956/Shared_Between_VMs/GITFUCK/VUPlayer-LZSS/playlzs16-dumb.asm
+     1 				;* Arrrgh, this will be fun! lol
+     2 				;*
+     3
+     4 				;* ----------------------------------------------------------------------------
+     5
+     6 				;* So here it begins, yet another time, woohooo!!!
+     7
+     8 E8EA			.proc LZSSPlayFrame
+     9 E8EA A2 08			ldx #8
+    10 E8EC A5 BD			lda ZPLZS.SongStereo
+    11 E8EE F0 02 A2 11			seq:ldx #17
+    12 E8F2 A9 ED 85 92			mva #>BUFFERS ZPLZS.ChannelBuffer+1
+    13 E8F6 A4 8B			ldy ZPLZS.BufferStatus
+    14 E8F8 F0 2D			beq LZSSPlayFrameBegin
+    15 					
+    16 E8FA			LZSSInitialise:
+    17 E8FA 84 91			sty ZPLZS.ChannelBuffer+0
+    18 E8FC C8				iny
+    19 E8FD 84 90			sty ZPLZS.ChannelOffset
+    20 E8FF 84 8B			sty ZPLZS.BufferStatus
+    21 E901 A5 84			lda ZPLZS.BufferStart+0
+    22 E903 18				clc
+    23 E904 69 03			adc #3
+    24 E906 85 88			sta ZPLZS.BufferPointer+0
+    25 E908 A5 85			lda ZPLZS.BufferStart+1
+    26 E90A 69 00			adc #0
+    27 E90C 85 89			sta ZPLZS.BufferPointer+1
+    28 					
+    29 E90E			LZSSInitialiseLoop:
+    30 E90E B1 88 91 91			mva (ZPLZS.BufferPointer),y (ZPLZS.ChannelBuffer),y
+    31 E912 95 E7			sta SDWPOK,x
+    32 E914 94 93			sty ZPLZS.ByteCount,x
+    33 E916 E6 88			inc ZPLZS.BufferPointer+0
+    34 E918 D0 02 E6 89			sne:inc ZPLZS.BufferPointer+1
+    35 E91C E6 92			inc ZPLZS.ChannelBuffer+1
+    36 E91E CA				dex
+    37 E91F 10 ED			bpl LZSSInitialiseLoop
+    38 E921 84 91			sty ZPLZS.ChannelBuffer+0
+    39 E923 C8				iny
+    40 E924 84 8A			sty ZPLZS.BufferBitByte
+    41 E926 60				rts
+    42 					
+    43 E927			LZSSPlayFrameBegin:
+    44 E927 84 8C			sty ZPLZS.BufferOffset
+    45 E929 A0 02			ldy #2
+    46 					
+    47 E92B			LZSSPlayFrameBegin_a:
+    48 E92B B1 84			lda (ZPLZS.BufferStart),y
+    49 E92D 99 8D 00			sta ZPLZS.ChannelBitByte,y
+    50 E930 88				dey
+    51 E931 10 F8			bpl LZSSPlayFrameBegin_a
+    52 					
+    53 E933			LZSSPlayFrameContinue:
+    54 E933 46 8F			lsr ZPLZS.ChannelBitByte+2
+    55 E935 66 8E			ror ZPLZS.ChannelBitByte+1
+    56 E937 66 8D			ror ZPLZS.ChannelBitByte+0
+    57 E939 90 07			bcc LZSSPlayFrameReadByte
+    58 					
+    59 E93B			LZSSPlayFrameSkipByte:
+    60 E93B A4 90			ldy ZPLZS.ChannelOffset
+    61 E93D 88				dey
+    62 E93E B1 91			lda (ZPLZS.ChannelBuffer),y
+    63 E940 B0 2B			bcs LZSSPlayFrameWriteByte
+    64 					
+    65 E942			LZSSPlayFrameReadByte:
+    66 E942 B5 93			lda ZPLZS.ByteCount,x
+    67 E944 D0 1F			bne LZSSPlayFrameCopyByte
+    68 E946 46 8A			lsr ZPLZS.BufferBitByte
+    69 E948 D0 09			bne LZSSPlayFrameGetByte
+    70 E94A A4 8C			ldy ZPLZS.BufferOffset
+    71 E94C E6 8C			inc ZPLZS.BufferOffset
+    72 E94E B1 88			lda (ZPLZS.BufferPointer),y
+    73 E950 6A				ror @
+    74 E951 85 8A			sta ZPLZS.BufferBitByte
+    75 					
+    76 E953			LZSSPlayFrameGetByte:
+    77 E953 A4 8C			ldy ZPLZS.BufferOffset
+    78 E955 E6 8C			inc ZPLZS.BufferOffset
+    79 E957 B1 88			lda (ZPLZS.BufferPointer),y
+    80 E959 B0 12			bcs LZSSPlayFrameWriteByte
+    81 E95B 95 A5			sta ZPLZS.LastOffset,x
+    82 E95D A4 8C			ldy ZPLZS.BufferOffset
+    83 E95F E6 8C			inc ZPLZS.BufferOffset
+    84 E961 B1 88			lda (ZPLZS.BufferPointer),y
+    85 E963 95 93			sta ZPLZS.ByteCount,x
+    86 					
+    87 E965			LZSSPlayFrameCopyByte:
+    88 E965 F6 A5			inc ZPLZS.LastOffset,x
+    89 E967 B4 A5			ldy ZPLZS.LastOffset,x
+    90 E969 B1 91			lda (ZPLZS.ChannelBuffer),y
+    91 E96B D6 93			dec ZPLZS.ByteCount,x
+    92 					
+    93 E96D			LZSSPlayFrameWriteByte:
+    94 E96D A4 90			ldy ZPLZS.ChannelOffset
+    95 E96F 91 91			sta (ZPLZS.ChannelBuffer),y
+    96 E971 95 E7			sta SDWPOK,x
+    97 					
+    98 E973			LZSSPlayFrameNext:
+    99 E973 E6 92			inc ZPLZS.ChannelBuffer+1
+   100 E975 CA				dex
+   101 E976 10 BB			bpl LZSSPlayFrameContinue
+   102 					
+   103 E978			LZSSUpdate:
+   104 E978 E6 90			inc ZPLZS.ChannelOffset
+   105 E97A A5 88			lda ZPLZS.BufferPointer+0
+   106 E97C 18				clc
+   107 E97D 65 8C			adc ZPLZS.BufferOffset
+   108 E97F 85 88			sta ZPLZS.BufferPointer+0
+   109 E981 90 02 E6 89			scc:inc ZPLZS.BufferPointer+1
+   110 E985 A5 89			lda ZPLZS.BufferPointer+1
+   111 E987 C5 87			cmp ZPLZS.BufferEnd+1
+   112 E989 90 06			bcc LZSSUpdateDone
+   113 E98B A5 88			lda ZPLZS.BufferPointer+0
+   114 E98D C5 86			cmp ZPLZS.BufferEnd+0
+   115 E98F B0 52			bcs SetNewSongPtrs
+   116 					
+   117 E991			LZSSUpdateDone:
+   118 E991 60				rts
+   119 				.endp
+   120
+   121 				;* ----------------------------------------------------------------------------
+   122
+   123 				;* Song index initialisation subroutine, load pointers using index number, as well as loop point when it exists
+   124 				;* If the routine is called from this label, index and loop are restarted
+   125
+   126 E992			SetNewSongPtrsFull:
+   127 E992 A5 B9			lda ZPLZS.SongIndex		; Current song index
+   128 E994 0A				asl @
+   129 E995 AA				tax
+   130 E996 BD 06 20 85 B7 BD + 	mwa LZDATA+6,x ZPLZS.SongPointer
+   131 E9A0 A0 00			ldy #0				; Reset player variables
+   132 E9A2 B1 B7			lda (ZPLZS.SongPointer),y
+   133 E9A4 84 BD			sty ZPLZS.SongStereo
+   134 E9A6 4A				lsr @
+   135 E9A7 26 BD			rol ZPLZS.SongStereo
+   136 E9A9 84 CF			sty ZPLZS.AdjustSpeed
+   137 E9AB 4A				lsr @
+   138 E9AC 66 CF			ror ZPLZS.AdjustSpeed		; I honestly forgot why I added this parameter but whatever
+   139 E9AE 84 BC			sty ZPLZS.SongRegion
+   140 E9B0 4A				lsr @
+   141 E9B1 26 BC			rol ZPLZS.SongRegion
+   142 E9B3 85 BB			sta ZPLZS.SongSpeed		; 2 Unused Bits remain, but it's safe to assume no invalid data will be used
+   143 E9B5 84 C1			sty ZPLZS.FadingOut
+   144 E9B7 84 C2			sty ZPLZS.StopOnFadeout
+   145 E9B9 84 BE			sty ZPLZS.SongSequence
+   146 E9BB 84 C0			sty ZPLZS.LoopCount
+   147 E9BD 84 E0			sty ZPLZS.ProgramStatus
+   148 E9BF 84 F9			sty bar_counter+0
+   149 E9C1 84 FA			sty bar_counter+1
+   150 E9C3 84 FB			sty bar_counter+2
+   151 E9C5 C8				iny
+   152 E9C6 B1 B7 85 FC C8 B1 + 	mwa (ZPLZS.SongPointer),y bar_increment+0
+   153 E9CF C8				iny
+   154 E9D0 B1 B7 85 FE C8 B1 + 	mwa (ZPLZS.SongPointer),y bar_increment+2
+   155 E9D9 C8				iny
+   156 E9DA 98				tya
+   157 E9DB 65 B7			adc ZPLZS.SongPointer+0		; Carry guaranteed to be Clear from Bitwise Operations
+   158 E9DD 85 B7			sta ZPLZS.SongPointer+0
+   159 E9DF 90 02 E6 B8			scc:inc ZPLZS.SongPointer+1
+   160 					
+   161 				;* If the routine is called from this label, it will use the current parameters instead
+   162
+   163 E9E3			SetNewSongPtrs:
+   164 E9E3 A4 BE			ldy ZPLZS.SongSequence
+   165 E9E5 B1 B7			lda (ZPLZS.SongPointer),y
+   166 E9E7 10 2C			bpl SetNewSongPtrs_c
+   167 E9E9 C9 FF			cmp #$FF
+   168 E9EB D0 10			bne SetNewSongPtrs_b
+   169 E9ED 24 C0			bit ZPLZS.LoopCount
+   170 E9EF 10 06			bpl SetNewSongPtrs_a
+   171 E9F1 A9 00			lda #0
+   172 E9F3 85 BE			sta ZPLZS.SongSequence
+   173 E9F5 F0 EC			beq SetNewSongPtrs
+   174 					
+   175 E9F7			SetNewSongPtrs_a:
+   176 E9F7 A9 F0			lda #$F0
+   177 E9F9 85 C1			sta ZPLZS.FadingOut		; Force instant Song End
+   178 E9FB 30 3F			bmi SetNewSongPtrsDone
+   179 					
+   180 E9FD			SetNewSongPtrs_b:
+   181 E9FD 29 7F			and #$7F
+   182 E9FF 85 BE			sta ZPLZS.SongSequence
+   183 EA01 A5 FF			lda bar_loop			; Set the Progress bar position at the start of the Loop Point
+   184 EA03 85 F9			sta bar_counter			; So it will match visually during playback
+   185 EA05 A6 C0			ldx ZPLZS.LoopCount		; How many times the End of a Sequence was reached so far?
+   186 EA07 30 DA			bmi SetNewSongPtrs		; Bit 7 set -> Infinitely looping, resume playback from the Loop Point
+   187 EA09 E8				inx				; Increment the Loop Counter
+   188 EA0A 86 C0			stx ZPLZS.LoopCount		; The update the value in memory
+   189 EA0C E0 02			cpx #2				; Has it been looping at least once?
+   190 EA0E 90 D3			bcc SetNewSongPtrs		; If not, resume playback from the Loop Point
+   191 EA10 20 1B EB			jsr trigger_fade_immediate	; Initialise fadeout sequence for the remainder of playback time
+   192 EA13 30 CE			bmi SetNewSongPtrs		; Guaranteed to return with the Negative Flag set
+   193 					
+   194 EA15			SetNewSongPtrs_c:
+   195 EA15 85 BF			sta ZPLZS.SongSection		; Actually useless, this is just a value to Display for debugging purposes
+   196 EA17 0A				asl @
+   197 EA18 A8				tay
+   198 EA19 AD 04 20 85 80 AD + 	mwa LZDATA+4 ZPLZS.TMP0
+   199 EA23 B1 80 85 84 C8 B1 + 	mwa (ZPLZS.TMP0),y ZPLZS.BufferStart
+   200 EA2C C8				iny
+   201 EA2D B1 80 85 86 C8 B1 + 	mwa (ZPLZS.TMP0),y ZPLZS.BufferEnd
+   202 EA36 A9 FF 85 8B			mva #$FF ZPLZS.BufferStatus
+   203 EA3A E6 BE			inc ZPLZS.SongSequence
+   204 EA3C			SetNewSongPtrsDone:
+   205 EA3C 60				rts
+   206 					
+   207 				;-----------------
+   208
+   209 				;* Volume Fadeout Subroutine
+   210
+   211 EA3D			.proc UpdateVolumeFadeout
+   212 EA3D 24 C1			bit ZPLZS.FadingOut
+   213 EA3F 10 0F			bpl UpdateVolumeFadeoutDone
+   214 EA41 A5 D2			lda ZPLZS.Frames
+   215 EA43 D0 02 C6 C1			sne:dec ZPLZS.FadingOut
+   216 EA47 A5 C1			lda ZPLZS.FadingOut
+   217 EA49 C9 F5			cmp #$F5
+   218 EA4B B0 03			bcs UpdateVolumeFadeoutDone
+   219 EA4D 20 56 EA			jsr set_stop
+   220 					
+   221 EA50			UpdateVolumeFadeoutDone:
+   222 EA50 60				rts
+   223 				.endp
+   224
+   225 				;-----------------
+   226
+   227 				;* Toggle Stop, similar to pause, except Play will restart the tune from the beginning
+   228 				;* The routine will continue into the following subroutines, a RTS will be found at the end of setpokeyfull further below 
+   229
+   230 EA51			stop_toggle 
+   231 EA51 24 C3			bit ZPLZS.PlayerStatus		; What is the current Player state?
+   232 EA53 10 01			bpl set_stop			; The Stop flag will be set, regardless of Playing or being Paused
+   233 EA55 60				rts				; Otherwise, the player is Stopped already, no further action needed
+   234 EA56			set_stop
+   235 EA56 A9 80			lda #%10000000			; Bit 7 set -> Stop Flag
+   236 EA58 85 C3			sta ZPLZS.PlayerStatus		; Update the Player state
+   237 EA5A C6 E0			dec ZPLZS.ProgramStatus		; Force a Reset within Main Loop
+   238 EA5C 60				rts
+   239
+   240 				;-----------------
+   241
+   242 				;* Stop/Pause the player and reset the POKEY registers, a RTS will be found at the end of setpokeyfull further below 
+   243
+   244 EA5D			stop_pause_reset
+   245 EA5D A9 03			lda #3				; Default SKCTL value, needed for handling Keyboard
+   246 EA5F 85 E5			sta POKSKC+0
+   247 EA61 85 E6			sta POKSKC+1
+   248 EA63 A9 00			lda #0				; Default POKEY values
+   249 EA65 A2 08			ldx #8				; 4xAUDF + 4xAUDC + 1xAUDCTL
+   250 EA67			stop_pause_reset_a 
+   251 EA67 95 E7			sta SDWPOK0,x			; Clear all POKEY values in memory 
+   252 EA69 95 F0			sta SDWPOK1,x			; Write to both POKEYs even if there is no Stereo setup, that won't harm anything
+   253 EA6B CA				dex
+   254 EA6C 10 F9			bpl stop_pause_reset_a		; Repeat until all channels were cleared
+   255 EA6E 60				rts
+   256
+   257 				;----------------- 
+   258
+   259 				;* Setpokey, intended for double buffering the decompressed LZSS bytes as fast as possible for timing and cosmetic purpose
+   260
+   261 EA6F			setpokeyfull
+   262 EA6F A5 E5			lda POKSKC+0
+   263 EA71 8D 0F D2			sta $D20F 
+   264 EA74 A4 EF			ldy SDWPOK0.POKCTL
+   265 EA76 A5 E7			lda SDWPOK0.POKF0
+   266 EA78 A6 E8			ldx SDWPOK0.POKC0
+   267 EA7A 8D 00 D2			sta $D200
+   268 EA7D 8E 01 D2			stx $D201
+   269 EA80 A5 E9			lda SDWPOK0.POKF1
+   270 EA82 A6 EA			ldx SDWPOK0.POKC1
+   271 EA84 8D 02 D2			sta $D202
+   272 EA87 8E 03 D2			stx $D203
+   273 EA8A A5 EB			lda SDWPOK0.POKF2
+   274 EA8C A6 EC			ldx SDWPOK0.POKC2
+   275 EA8E 8D 04 D2			sta $D204
+   276 EA91 8E 05 D2			stx $D205
+   277 EA94 A5 ED			lda SDWPOK0.POKF3
+   278 EA96 A6 EE			ldx SDWPOK0.POKC3
+   279 EA98 8D 06 D2			sta $D206
+   280 EA9B 8E 07 D2			stx $D207
+   281 EA9E 8C 08 D2			sty $D208
+   282 EAA1 A5 CD			lda ZPLZS.MachineStereo
+   283 EAA3 F0 32			beq setpokeyfulldone
+   284 					
+   285 EAA5			setpokeyfullstereo
+   286 EAA5 A5 E6			lda POKSKC+1
+   287 EAA7 8D 1F D2			sta $D21F 
+   288 EAAA A4 F8			ldy SDWPOK1.POKCTL
+   289 EAAC A5 F0			lda SDWPOK1.POKF0
+   290 EAAE A6 F1			ldx SDWPOK1.POKC0
+   291 EAB0 8D 10 D2			sta $D210
+   292 EAB3 8E 11 D2			stx $D211
+   293 EAB6 A5 F2			lda SDWPOK1.POKF1
+   294 EAB8 A6 F3			ldx SDWPOK1.POKC1
+   295 EABA 8D 12 D2			sta $D212
+   296 EABD 8E 13 D2			stx $D213
+   297 EAC0 A5 F4			lda SDWPOK1.POKF2
+   298 EAC2 A6 F5			ldx SDWPOK1.POKC2
+   299 EAC4 8D 14 D2			sta $D214
+   300 EAC7 8E 15 D2			stx $D215
+   301 EACA A5 F6			lda SDWPOK1.POKF3
+   302 EACC A6 F7			ldx SDWPOK1.POKC3
+   303 EACE 8D 16 D2			sta $D216
+   304 EAD1 8E 17 D2			stx $D217
+   305 EAD4 8C 18 D2			sty $D218
+   306 					
+   307 EAD7			setpokeyfulldone
+   308 EAD7 60				rts
+   309
+   310 				;-----------------
+   311
+   312 				;* Toggle Play/Pause, and mute all channels, but do not overwrite the AUDF or AUDCTL registers, so they can be used right back
+   313 				;* Otherwise, as soon as it's set back to Play from Pause, some junk data might stick in memory, and wouldn't be properly updated
+   314 				;* It turns out, the idea from a few months ago actually worked well enough to counter this situation, so let's just use it again
+   315 				;* TODO: Use Mute Volume Mask on all channels when the Pause Flag is set instead of this gross workaround
+   316
+   317 EAD8			play_pause_toggle
+   318 EAD8 24 C3			bit ZPLZS.PlayerStatus		; What is the current Player state?
+   319 EADA 30 07			bmi set_play_from_a_stop	; Stopped -> Switch state to Play from a Stop
+   320 EADC 70 38			bvs set_play			; Paused -> Switch state to Play from a Pause
+   321
+   322 EADE			set_pause
+   323 EADE A9 40			lda #%01000000			; Bit 6 set -> Pause Flag
+   324 EAE0 85 C3			sta ZPLZS.PlayerStatus		; Update the Player state
+   325 EAE2 60				rts
+   326 					
+   327 EAE3			set_play_from_a_stop
+   328 EAE3 A2 01			ldx #$01
+   329 					
+   330 EAE5			set_play_from_a_stop_a
+   331 EAE5 8E 01 D2			stx $D201
+   332 EAE8 8E 11 D2			stx $D211
+   333 EAEB 8E 03 D2			stx $D203
+   334 EAEE 8E 13 D2			stx $D213
+   335 EAF1 8E 05 D2			stx $D205
+   336 EAF4 8E 15 D2			stx $D215
+   337 EAF7 8E 07 D2			stx $D207
+   338 EAFA 8E 17 D2			stx $D217
+   339 EAFD 8E 09 D2			stx $D209
+   340 EB00 8E 19 D2			stx $D219
+   341 EB03 CA				dex
+   342 EB04 30 0E			bmi set_play_from_a_stop_b
+   343 EB06 8E 08 D2			stx $D208
+   344 EB09 8E 18 D2			stx $D218
+   345 EB0C 8E 0F D2			stx $D20F
+   346 EB0F 8E 1F D2			stx $D21F
+   347 EB12 F0 D1			beq set_play_from_a_stop_a
+   348 					
+   349 EB14			set_play_from_a_stop_b
+   350 EB14 C6 E0			dec ZPLZS.ProgramStatus		; Force a Reset within Main Loop
+   351 					
+   352 EB16			set_play
+   353 EB16 A9 00			lda #%00000000			; Bit 6 and 7 clear -> Play Flag
+   354 EB18 85 C3			sta ZPLZS.PlayerStatus		; Update the Player state
+   355 EB1A 60				rts
+   356 					
+   357 				;----------------- 
+   358
+   359 				;* This routine provides the ability to initialise a fadeout for anything that may require a transition in a game/demo 
+   360 				;* At the end of the routine, the is_playing flag will be set to a 'stop', which will indicate the fadeout has been completed
+   361 				;* If a new tune index is loaded during a fadeout, it will be interrupted, and play the next tune like normal instead 
+   362
+   363 EB1B			trigger_fade_immediate
+   364 EB1B 24 C1			bit ZPLZS.FadingOut		; Is the tune currently playing already engaged in a fadeout?
+   365 EB1D 30 02			bmi trigger_fade_done		; If there is a fadeout in progress, skip this subroutine!
+   366 EB1F C6 C1			dec ZPLZS.FadingOut		; $00 -> $FF, the fadeout flag is set
+   367 EB21			trigger_fade_done
+   368 EB21 60				rts
+   369 					
+   370 				;-----------------
+   371
+   372 EB22			.proc CalculateTime
+   373 EB22 E6 D2			inc ZPLZS.Frames		; Increment Frames
+   374 EB24 A5 D2			lda ZPLZS.Frames
+   375 EB26 C9 32			cmp #50				; Did a Second pass yet?
+   376 EB28 90 12			bcc CalculateTimeDone		; If not, there is nothing else to do
+   377 EB2A A9 00			lda #0
+   378 EB2C 85 D2			sta ZPLZS.Frames		; Reset the Frames counter
+   379 EB2E E6 D3			inc ZPLZS.Seconds		; Increment Seconds
+   380 EB30 A5 D3			lda ZPLZS.Seconds
+   381 EB32 C9 3C			cmp #60				; Did at least 60 seconds pass yet?
+   382 EB34 90 06			bcc CalculateTimeDone		; If not, there is nothing else to do
+   383 EB36 A9 00			lda #0
+   384 EB38 85 D3			sta ZPLZS.Seconds		; Reset the Seconds counter
+   385 EB3A E6 D4			inc ZPLZS.Minutes		; Increment Minutes, uncapped since it is very unlikely to be maxed out
+   386
+   387 EB3C			CalculateTimeDone:
+   388 EB3C 60				rts
+   389 				.endp
+   390
+   391 				;-----------------
+   392
+   393 EB3D			.proc ResetTimer
+   394 EB3D A9 00			lda #0
+   395 EB3F 85 D1			sta ZPLZS.TimerOffset
+   396 EB41 85 D2			sta ZPLZS.Frames
+   397 EB43 85 D3			sta ZPLZS.Seconds
+   398 EB45 85 D4			sta ZPLZS.Minutes
+   399 EB47 60				rts
+   400 				.endp
+   401
+   402 				;-----------------
+   403
+   404 				;* Check if the Volume Only Bit is set in CH1 during playback
+   405 				;* Below the $Fx range, it's a trigger for enabing Two-Tone Filter
+   406 				;* Otherwise, it's proper Volume Only Output, and shouldn't be overridden
+   407
+   408 EB48			.proc CheckForTwoToneBit
+   409 EB48			CheckForTwoToneBitLeft:
+   410 EB48 A2 03			ldx #$03
+   411 EB4A A5 E8			lda SDWPOK0.POKC0
+   412 EB4C C9 F0			cmp #$F0
+   413 EB4E B0 0C			bcs CheckForTwoToneBitLeft_a
+   414 EB50 A8				tay
+   415 EB51 29 10			and #$10
+   416 EB53 F0 07			beq CheckForTwoToneBitLeft_a
+   417 EB55 98				tya
+   418 EB56 49 10			eor #$10
+   419 EB58 85 E8			sta SDWPOK0.POKC0
+   420 EB5A A2 8B			ldx #$8B
+   421 					
+   422 EB5C			CheckForTwoToneBitLeft_a:
+   423 EB5C 86 E5			stx POKSKC+0
+   424 					
+   425 EB5E			CheckForTwoToneBitRight:
+   426 EB5E A5 CD			lda ZPLZS.MachineStereo
+   427 EB60 F0 16			beq CheckForTwoToneBitDone
+   428 EB62 A2 03			ldx #$03
+   429 EB64 A5 F1			lda SDWPOK1.POKC0
+   430 EB66 C9 F0			cmp #$F0
+   431 EB68 B0 0C			bcs CheckForTwoToneBitRight_a
+   432 EB6A A8				tay
+   433 EB6B 29 10			and #$10
+   434 EB6D F0 07			beq CheckForTwoToneBitRight_a
+   435 EB6F 98				tya
+   436 EB70 49 10			eor #$10
+   437 EB72 85 F1			sta SDWPOK1.POKC0
+   438 EB74 A2 8B			ldx #$8B
+   439 					
+   440 EB76			CheckForTwoToneBitRight_a:
+   441 EB76 86 E6			stx POKSKC+1
+   442 					
+   443 EB78			CheckForTwoToneBitDone:
+   444 EB78 60				rts
+   445 				.endp
+   446
+   447 				;-----------------
+   448
+   449 				;* Swap POKEY buffers for Stereo Playback in Dual Mono
+   450
+   451 EB79			.proc SwapBufferCopy
+   452 EB79 A5 CD			lda ZPLZS.MachineStereo
+   453 EB7B F0 11			beq SwapBufferCopyDone
+   454 EB7D C5 BD			cmp ZPLZS.SongStereo
+   455 EB7F F0 0D			beq SwapBufferCopyDone
+   456 EB81 A2 08			ldx #8
+   457 EB83 A5 E5			lda POKSKC+0
+   458 EB85 85 E6			sta POKSKC+1
+   459 					
+   460 EB87			SwapBufferCopyLoop:
+   461 EB87 B5 E7			lda SDWPOK0,x
+   462 EB89 95 F0			sta SDWPOK1,x
+   463 EB8B CA				dex
+   464 EB8C 10 F9			bpl SwapBufferCopyLoop
+   465
+   466 EB8E			SwapBufferCopyDone:
+   467 EB8E 60				rts
+   468 				.endp
+   469
+   470 				;-----------------
+   471
+   472 				;* Set Volume Level in all POKEY channels, combined with Fadeout effect
+   473 				;* Mute all POKEY channels with the Volume Mask toggle bit active
+   474
+   475 EB8F			.proc SetVolumeLevel
+   476 EB8F A5 C4			lda ZPLZS.VolumeMask
+   477 EB91 85 81			sta ZPLZS.TMP1
+   478 					
+   479 EB93			SetVolumeLevelLeft:
+   480 EB93 A2 07			ldx #7
+   481 EB95 A0 03			ldy #3
+   482 					
+   483 EB97			SetVolumeLevelLeftLoop:
+   484 EB97 06 81			asl ZPLZS.TMP1
+   485 EB99 B5 E7			lda SDWPOK0,x
+   486 EB9B 29 0F			and #$0F
+   487 EB9D F0 20			beq SetVolumeLevelLeftLoop_c
+   488 EB9F B0 12			bcs SetVolumeLevelLeftLoop_a
+   489 EBA1 79 C5 00			adc ZPLZS.VolumeLevel+0,y
+   490 EBA4 10 02 A9 00			spl:lda #0
+   491 EBA8 C9 10			cmp #$10
+   492 EBAA 90 02 A9 0F			scc:lda #$0F
+   493 EBAE 18 65 C1			add ZPLZS.FadingOut
+   494 EBB1 10 02			bpl SetVolumeLevelLeftLoop_b
+   495 					
+   496 EBB3			SetVolumeLevelLeftLoop_a:
+   497 EBB3 A9 00			lda #0
+   498 					
+   499 EBB5			SetVolumeLevelLeftLoop_b:
+   500 EBB5 85 80			sta ZPLZS.TMP0
+   501 EBB7 B5 E7			lda SDWPOK0,x
+   502 EBB9 29 F0			and #$F0
+   503 EBBB 05 80			ora ZPLZS.TMP0
+   504 EBBD 95 E7			sta SDWPOK0,x
+   505 					
+   506 EBBF			SetVolumeLevelLeftLoop_c:
+   507 EBBF 88				dey
+   508 EBC0 CA CA			:2 dex
+   509 EBC2 10 D3			bpl SetVolumeLevelLeftLoop
+   510 					
+   511 EBC4			SetVolumeLevelRight:
+   512 EBC4 A5 CD			lda ZPLZS.MachineStereo
+   513 EBC6 F0 31			beq SetVolumeLevelDone
+   514 EBC8 A2 07			ldx #7
+   515 EBCA A0 03			ldy #3
+   516 					
+   517 EBCC			SetVolumeLevelRightLoop:
+   518 EBCC 06 81			asl ZPLZS.TMP1
+   519 EBCE B5 F0			lda SDWPOK1,x
+   520 EBD0 29 0F			and #$0F
+   521 EBD2 F0 20			beq SetVolumeLevelRightLoop_c
+   522 EBD4 B0 12			bcs SetVolumeLevelRightLoop_a
+   523 EBD6 79 C9 00			adc ZPLZS.VolumeLevel+4,y
+   524 EBD9 10 02 A9 00			spl:lda #0
+   525 EBDD C9 10			cmp #$10
+   526 EBDF 90 02 A9 0F			scc:lda #$0F
+   527 EBE3 18 65 C1			add ZPLZS.FadingOut
+   528 EBE6 10 02			bpl SetVolumeLevelRightLoop_b
+   529 					
+   530 EBE8			SetVolumeLevelRightLoop_a:
+   531 EBE8 A9 00			lda #0
+   532 					
+   533 EBEA			SetVolumeLevelRightLoop_b:
+   534 EBEA 85 80			sta ZPLZS.TMP0
+   535 EBEC B5 F0			lda SDWPOK1,x
+   536 EBEE 29 F0			and #$F0
+   537 EBF0 05 80			ora ZPLZS.TMP0
+   538 EBF2 95 F0			sta SDWPOK1,x
+   539 					
+   540 EBF4			SetVolumeLevelRightLoop_c:
+   541 EBF4 88				dey
+   542 EBF5 CA CA			:2 dex
+   543 EBF7 10 D3			bpl SetVolumeLevelRightLoop
+   544 						
+   545 EBF9			SetVolumeLevelDone:
+   546 EBF9 60				rts
+   547 				.endp
+   548
+   549 				;-----------------
+   550
+   551 				;//---------------------------------------------------------------------------------------------
+   552
+   553 				;* Detect the actual Machine Region in order to adjust Playback Speed among other things
+   554 				;* PAL -> 0, NTSC -> 1
+   555
+   556 EBFA			.proc DetectMachineRegion
+   557 EBFA AD 0B D4			lda VCOUNT
+   558 EBFD F0 03			beq DetectMachineRegion_a
+   559 EBFF AA				tax
+   560 EC00 D0 F8			bne DetectMachineRegion
+   561 					
+   562 EC02			DetectMachineRegion_a:
+   563 EC02 85 CE			sta ZPLZS.MachineRegion
+   564 EC04 E0 9B			cpx #PAL_SCANLINE-1
+   565 EC06 10 02 E6 CE			spl:inc ZPLZS.MachineRegion
+   566 EC0A 60				rts
+   567 				.endp
+   568
+   569 				;* ----------------------------------------------------------------------------
+   570
+   571 				;* Detect second POKEY for Stereo Mode
+   572 				;* Mono -> 0, Stereo -> 1
+   573
+   574 EC0B			.proc DetectStereoMode
+   575 EC0B A2 00			ldx #$00
+   576 EC0D 8E 0F D2			stx $D20F
+   577 EC10 8E 1F D2			stx $D21F
+   578 EC13 A0 03			ldy #$03
+   579 EC15 8C 1F D2			sty $D21F
+   580 EC18 8D 0A D4 8D 0A D4		:2 sta WSYNC
+   581 EC1E A9 FF			lda #$FF
+   582 					
+   583 EC20			DetectStereoModeLoop:
+   584 EC20 2D 0A D2			and RANDOM
+   585 EC23 CA				dex
+   586 EC24 D0 FA			bne DetectStereoModeLoop
+   587 EC26 86 CD			stx ZPLZS.MachineStereo
+   588 EC28 8C 0F D2			sty $D20F
+   589 EC2B C9 FF			cmp #$FF
+   590 EC2D D0 02 E6 CD			sne:inc ZPLZS.MachineStereo
+   591 					
+   592 EC31			DetectStereoModeDone:
+   593 EC31 60				rts
+   594 				.endp
+   595
+   596 				;* ----------------------------------------------------------------------------
+   597
+   598 EC32			.proc SetStereoMode
+   599 					lda #%00000000
+   600 					sta ZPLZS.VolumeMask
+   601 					lda ZPLZS.MachineStereo
+   602 					beq SetStereoModeDone
+   603 					cmp ZPLZS.SongStereo
+   604 					beq SetStereoModeDone
+   605 					lda #%01101001
+   606 					sta ZPLZS.VolumeMask
+   607 					
+   608 EC32			SetStereoModeDone:
+   609 					rts
+   610 				.endp
+   611
+   612 				;* ----------------------------------------------------------------------------
+   613
+   111 EC32			DRIVEREND
+   112 						
+   113 						.echo "> DRIVER size of ", * - DRIVER, ", from ", DRIVER, " to ", *
+   113 				> DRIVER size of $1432, from $D800 to $EC32
+   114 						.echo "> Run Address at ", VUPLAYER
+   114 				> Run Address at $DFDC
+   115 							
+   116 					.elseif (OPTION == 4)		;* PlayLZ16 (Minimal Driver, TODO later)
+   117 					
+   118 					.elseif (OPTION == 5)		;* MergeXEX
+   119 						opt H-
+   120 						ins "/ASSEMBLED/Relocator.obx"
+   121 						opt H+
+   122 						run RELOCATOR
+   123 						org ORG_ADDRESS
+   124 						ins "/ASSEMBLED/VUPlayer.obx"
+   125 						ini RELOCATOR
+   126 						opt H-
+   127 						ins "/ASSEMBLED/LZData.obx"
+   128 						
+   129 					.elseif (OPTION == 6)		;* MergeSAP (Using PlayLZ16, TODO later)
+   130 					
+   131 					.endif
+   132
+   133 				;* Original Assembly Configuration
+   134
+   135 				/*
+   136 					icl "atari.def"
+   137 					org ZEROPAGE
+   138 					icl "lzsspZP.asm"
+   139 					
+   140 					.if (SAP_BINARY)
+   141 						opt H-
+   142 						icl "sap.asm"
+   143 					.endif
+   144
+   145 					opt H+ R- F-
+   146 					org DRIVER
+   147 					
+   148 					.if (SAP_BINARY)
+   149 						icl "LZSS_SAP.asm"
+   150 					.else
+   151 				VUFONT
+   152 						ins "font.fnt"
+   153 				VUDATA
+   154 						icl "VUData.asm"
+   155 				VUPLAYER
+   156 						icl "VUPlayer.asm"
+   157 						run VUPLAYER
+   158 					.endif
+   159 					
+   160 				PLAYLZ16
+   161 					icl "playlzs16-dumb.asm"
+   162 					
+   163 					org LZDATA
+   164 					icl "SongIndex.asm"
+   165 					
+   166 					org BUFFERS
+   167 					.ds ((2 * 9) * 256)
+   168 				*/
+   168
+   169
+   170 				;-----------------
+   171
+   172 				;//---------------------------------------------------------------------------------------------
+   173

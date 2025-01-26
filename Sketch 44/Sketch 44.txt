@@ -1,0 +1,43 @@
+This is a test that displays all duplicated SAP-R bytes from m_StreamBuffer.
+Each ones of the Buffer Chunks are indexed into memory using Songlines.
+
+Index: 0x0, Offset (real): 0, Offset (dupe): 0, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x1, Offset (real): 1792, Offset (dupe): 5376, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x2, Offset (real): 3584, Offset (dupe): 5376, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x3, Offset (real): 5376, Offset (dupe): 5376, Frames: 1792, Bytes (uncompressed): 16128
+
+Index: 0x4, Offset (real): 7168, Offset (dupe): 12544, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x5, Offset (real): 8960, Offset (dupe): 12544, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x6, Offset (real): 10752, Offset (dupe): 12544, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x7, Offset (real): 12544, Offset (dupe): 12544, Frames: 1792, Bytes (uncompressed): 16128
+
+Index: 0x8, Offset (real): 14336, Offset (dupe): 14336, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x9, Offset (real): 16128, Offset (dupe): 26880, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0xA, Offset (real): 17920, Offset (dupe): 26880, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0xB, Offset (real): 19712, Offset (dupe): 26880, Frames: 1792, Bytes (uncompressed): 16128
+
+Index: 0xC, Offset (real): 21504, Offset (dupe): 26880, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0xD, Offset (real): 23296, Offset (dupe): 26880, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0xE, Offset (real): 25088, Offset (dupe): 26880, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0xF, Offset (real): 26880, Offset (dupe): 26880, Frames: 1792, Bytes (uncompressed): 16128
+
+Index: 0x10, Offset (real): 28672, Offset (dupe): 34048, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x11, Offset (real): 30464, Offset (dupe): 34048, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x12, Offset (real): 32256, Offset (dupe): 34048, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x13, Offset (real): 34048, Offset (dupe): 34048, Frames: 1792, Bytes (uncompressed): 16128
+
+Index: 0x14, Offset (real): 35840, Offset (dupe): 41216, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x15, Offset (real): 37632, Offset (dupe): 41216, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x16, Offset (real): 39424, Offset (dupe): 41216, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x17, Offset (real): 41216, Offset (dupe): 41216, Frames: 1792, Bytes (uncompressed): 16128
+
+Index: 0x18, Offset (real): 43008, Offset (dupe): 43008, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x19, Offset (real): 44800, Offset (dupe): 55552, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x1A, Offset (real): 46592, Offset (dupe): 55552, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x1B, Offset (real): 48384, Offset (dupe): 55552, Frames: 1792, Bytes (uncompressed): 16128
+
+Index: 0x1C, Offset (real): 50176, Offset (dupe): 55552, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x1D, Offset (real): 51968, Offset (dupe): 55552, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x1E, Offset (real): 53760, Offset (dupe): 55552, Frames: 1792, Bytes (uncompressed): 16128
+Index: 0x1F, Offset (real): 55552, Offset (dupe): 55552, Frames: 1792, Bytes (uncompressed): 16128
+
