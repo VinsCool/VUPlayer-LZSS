@@ -731,6 +731,7 @@ int main(int argc, char **argv)
         lpos[i] = -1;
     }
 
+//
     // Skip SAP header
     long pos = ftell(input_file);
     while( 0 != fgets(header_line, 80, input_file) )
@@ -744,6 +745,10 @@ int main(int argc, char **argv)
     }
 
     fseek(input_file, pos, SEEK_SET);
+//
+    
+    //fseek(input_file, 0, SEEK_SET);
+    
     // Read all data
     int sz;
     
@@ -956,6 +961,7 @@ int main(int argc, char **argv)
 
     // Detect if at least one of the streams end in a match:
     int end_not_ok = 1;
+    int last_match = 0;
     //for(int i=0; i<9; i++)
     for(int i=0; i<channel_count; i++)
         if( !chn_skip[i] )
@@ -965,8 +971,19 @@ int main(int argc, char **argv)
     // a literal - just fix stream 0, as this is always encoded:
     if( force_last_literal && end_not_ok )
     {
-        fprintf(stderr,"LZSS: fixing up stream #0 to end in a literal\n");
-        lzop_backfill(&lz[0], 1);
+        //fprintf(stderr,"LZSS: fixing up stream #0 to end in a literal\n");
+        //lzop_backfill(&lz[0], 1);
+        
+        //for(int i = 0; i < channel_count; i++)
+        for(int i = channel_count-1; i >= 0; i--)
+        {
+        	if(!chn_skip[i] && lzop_last_is_match(&lz[i]))
+        	{
+        		fprintf(stderr,"LZSS: fixing up stream #%i to end in a literal\n", i);
+        		lzop_backfill(&lz[i], 1);
+        		break;
+        	}
+        }
     }
     else if( end_not_ok )
     {
