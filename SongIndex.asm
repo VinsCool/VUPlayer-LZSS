@@ -6,10 +6,13 @@
 		
 ;//---------------------------------------------------------------------------------------------
 
-.macro LoadData Filename
+.macro LoadData Filename, OldFormat
 	.put [(?LZ_Count * 2) + 0] = [* & 255]
 	.put [(?LZ_Count * 2) + 1] = [* >> 8]
 	.def ?LZ_Count += 1
+	.if (:OldFormat == TRUE)
+		.byte $00, $00
+	.endif
 	ins :Filename
 .endm
 
@@ -130,24 +133,70 @@ SongSection:
 	.def ?SNG_Count = 0
 .endif
 
-SNG_00	MakeSong 1, 1, 0, 1, 263, 86
-	FindSection LZ_O0
-	FindSection LZ_O1
+SongSequence:
+SNG_00	MakeSong 0, 1, 0, 1, 0, 0
+	FindSection LZ_00
+	EndSequence
+	
+SNG_01	MakeSong 0, 1, 0, 1, 0, 0
+	FindSection LZ_01
+	EndSequence
+	
+SNG_02	MakeSong 0, 1, 0, 1, 0, 0
+	FindSection LZ_02
+	EndSequence
+	
+SNG_03	MakeSong 0, 1, 0, 1, 0, 0
+	FindSection LZ_03
+	FindSection LZ_03a
 	GotoSequence 1
-SNG_01	MakeSong 1, 1, 0, 1, 236, 52
-	FindSection LZ_P0
-	FindSection LZ_P1
-	GotoSequence 1
-SNG_02	MakeSong 1, 1, 0, 1, 119, 0
-	FindSection LZ_C0
-	GotoSequence 0
-SNG_03	MakeSong 1, 1, 1, 1, 37, 0
-	FindSection LZ_50
-	GotoSequence 0
-SNG_04	MakeSong 1, 1, 1, 2, 60, 0
-	FindSection LZ_SS
+	
+SNG_04	MakeSong 0, 1, 0, 1, 0, 0
+	FindSection LZ_04
 	GotoSequence 0
 	
+SNG_05	MakeSong 0, 1, 0, 1, 0, 0
+	FindSection LZ_05
+	FindSection LZ_05a
+	GotoSequence 1
+	
+SNG_06	MakeSong 0, 1, 0, 1, 34, 0
+	FindSection LZ_06
+	GotoSequence 0
+	
+SNG_07	MakeSong 0, 1, 0, 1, 38, 0
+	FindSection LZ_07
+	GotoSequence 0
+	
+SNG_08	MakeSong 0, 1, 0, 1, 57, 0
+	FindSection LZ_08
+	GotoSequence 0
+	
+SNG_09	MakeSong 0, 1, 0, 1, 50, 0
+	FindSection LZ_09
+	GotoSequence 0
+	
+SNG_10	MakeSong 0, 1, 0, 1, 54, 0
+	FindSection LZ_10
+	GotoSequence 0
+	
+SNG_11	MakeSong 0, 1, 0, 1, 33, 0
+	FindSection LZ_11
+	GotoSequence 0
+	
+SNG_12	MakeSong 0, 1, 0, 1, 38, 0
+	FindSection LZ_12
+	GotoSequence 0
+	
+SNG_13	MakeSong 0, 1, 0, 1, 33, 0
+	FindSection LZ_13
+	GotoSequence 0
+	
+SNG_14	MakeSong 0, 1, 0, 1, 33, 0
+	FindSection LZ_14
+	GotoSequence 0
+SongSequenceEnd:
+
 ;-----------------
 		
 ;//---------------------------------------------------------------------------------------------
@@ -159,13 +208,23 @@ SNG_04	MakeSong 1, 1, 1, 2, 60, 0
 .endif
 
 SongData:
-LZ_SS	LoadData '/RANDOM4/Test 8.lzss'
-LZ_50	LoadData '/RANDOM4/Sketch 57 v5.lzss'
-LZ_C0	LoadData '/RANDOM3/SKETCH_24_LOOP.lzss'
-LZ_O0	LoadData '/RANDOM4/Table Manuscrite Final_INTRO.lzss'
-LZ_O1	LoadData '/RANDOM4/Table Manuscrite Final_LOOP.lzss'
-LZ_P0	LoadData '/RANDOM4/Journey_Through_a_Strange_Portal_Final_INTRO.lzss'
-LZ_P1	LoadData '/RANDOM4/Journey_Through_a_Strange_Portal_Final_LOOP.lzss'
+LZ_00	LoadData '/FireNIce/Coolmint Island (Prologue Pt 1).lzss', TRUE
+LZ_01	LoadData '/FireNIce/Enemy Theme (Prologue Pt 2).lzss', TRUE
+LZ_02	LoadData '/FireNIce/Dana is Chosen (Prologue Pt 3).lzss', TRUE
+LZ_03	LoadData '/FireNIce/The Story of Dana_INTRO.lzss', TRUE
+LZ_03a	LoadData '/FireNIce/The Story of Dana_LOOP.lzss', TRUE
+LZ_04	LoadData '/FireNIce/Grandmas House (Menu)_LOOP.lzss', TRUE
+LZ_05	LoadData '/FireNIce/Level Select_INTRO.lzss', TRUE
+LZ_05a	LoadData '/FireNIce/Level Select_LOOP.lzss', TRUE
+LZ_06	LoadData '/FireNIce/World 1 (Ice Rock Island)_LOOP.lzss', TRUE
+LZ_07	LoadData '/FireNIce/World 2 (Cobalt Mine)_LOOP.lzss', TRUE
+LZ_08	LoadData '/FireNIce/World 3 (Golden Castle)_LOOP.lzss', TRUE
+LZ_09	LoadData '/FireNIce/World 4 (Big Tree)_LOOP.lzss', TRUE
+LZ_10	LoadData '/FireNIce/World 5 (Star Field)_LOOP.lzss', TRUE
+LZ_11	LoadData '/FireNIce/World 6 (Earth Temple)_LOOP.lzss', TRUE
+LZ_12	LoadData '/FireNIce/World 7 (Farthest Lake)_LOOP.lzss', TRUE
+LZ_13	LoadData '/FireNIce/World 8 (Bone Canyon)_LOOP.lzss', TRUE
+LZ_14	LoadData '/FireNIce/World 9 (Volcano)_LOOP.lzss', TRUE
 SongDataEnd:
 
 ;-----------------

@@ -87,8 +87,12 @@ Start:
 	lda #$22		; DMA Enable, Normal Playfield
 	sta ZPLZS.DMAToggle
 	sta DMACTL		; Write to Direct Memory Access Control Address
+
 	ldx #120		; Load into index x a 120 frames buffer
 	jsr WaitForSomeTime
+
+;;	jsr CalculatePlaybackTime	; Oh boy, here we go!
+
 	mva #%11000000 NMIEN	; Enable Display List and VBlank Interrupts
 	cli			; Clear Interrupt Disable Status
 	
@@ -647,7 +651,8 @@ HandleKeyboardTable:
 	.word play_pause_toggle-1	; 10 -> 'P' key
 	.word DoNothing-1
 	.word do_button_selection-1	; 12 -> 'Enter' key
-	.word FrameAdvance-1		; 13 -> 'I' key
+	;.word FrameAdvance-1		; 13 -> 'I' key
+	.word DoNothing-1
 	.word DoNothing-1
 	.word DoNothing-1
 	.word DoNothing-1
@@ -1629,6 +1634,202 @@ draw_progress_bar_loop2
 	bpl draw_progress_bar_loop2 
 draw_progress_bar_done
 	rts
+
+;-----------------
+
+;* Calculate Playback Time and Progress Bar Display Variables
+;* This is a very crude way to do it, but it gets the job done so who the fuck cares really?
+
+.proc CalculatePlaybackTime
+	lda ZPLZS.SongIndex			; Backup current Subtune Index to the Stack
+	pha					; Just in case Playback begins from a specific Subtune ;)
+	mva #0 ZPLZS.SongIndex			; Set Index to 0 in order to process everything at once
+	
+Next:
+	jsr SetNewSongPtrsFull			; Initialise Next Song in memory
+	lda #0					; Reset variables
+	sta LoopPoint
+	sta TotalPlayTime+0
+	sta TotalPlayTime+1
+	sta TotalPlayTime+2
+	sta TotalPlayTime+3
+	sta LoopPlayTime+0
+	sta LoopPlayTime+1
+	sta LoopPlayTime+2
+	sta LoopPlayTime+3
+	tay
+	
+SearchLoop:
+	lda (ZPLZS.SongPointer),y
+	bmi FoundLoop
+	iny
+	bne SearchLoop
+	
+FoundLoop:
+	cmp #$FF
+	beq Play
+	and #$7F
+	sta LoopPoint
+	
+Play:
+	lda ZPLZS.SongSequence
+	pha
+	
+Loop:
+	jsr LZSSPlayFrame			; Play 1 LZSS frame
+	dec TimerSpeed
+	bpl Loop
+	mva ZPLZS.SongSpeed TimerSpeed
+	dec TimerOffset
+	beq Skip
+	bpl Add
+	lda ZPLZS.SongRegion
+	seq:lda #5
+	sta TimerOffset
+	
+Add:
+	ind TotalPlayTime			; Increment Total Playback Time
+	
+Skip:
+	pla
+	cmp ZPLZS.SongSequence
+	beq Continue
+	cmp LoopPoint
+	bne Continue
+	mva TotalPlayTime+0 LoopPlayTime+0	; Update Loop Time with current Playback Time
+	mva TotalPlayTime+1 LoopPlayTime+1
+	mva TotalPlayTime+2 LoopPlayTime+2
+	mva TotalPlayTime+3 LoopPlayTime+3
+	
+Continue:
+	lda ZPLZS.FadingOut			; Has the Song Stopped yet?
+	bmi Stop				; If yes, End Playback
+	lda ZPLZS.LoopCount			; Has the Song Looped yet?
+	beq Play				; If not, Keep Playing
+	
+Stop:
+	mva #$FF Div32.Acc+0
+	mva #$FF Div32.Acc+1
+	mva #$FF Div32.Acc+2
+	mva #$00 Div32.Acc+3
+	
+	mva TotalPlayTime+0 Div32.Aux+0
+	mva TotalPlayTime+1 Div32.Aux+1
+	mva TotalPlayTime+2 Div32.Aux+2
+	mva TotalPlayTime+3 Div32.Aux+3
+	
+	jsr Div32
+	
+	lda ZPLZS.SongIndex			; Yucky overwrite hack, don't tell mom!
+	asl @
+	tax
+	mwa LZDATA+6,x ZPLZS.SongPointer
+	
+	ldy #1
+	mva Div32.Acc+2 (ZPLZS.SongPointer),y
+	iny
+	mva Div32.Acc+1 (ZPLZS.SongPointer),y
+	iny
+	mva Div32.Acc+0 (ZPLZS.SongPointer),y
+	
+Seek:
+	jsr seek_forward			; Seek Next Song
+	lda ZPLZS.SongIndex			; Were all Songs processed yet?
+	jne Next				; If not, repeat until everything is done
+		
+Done:
+	pla
+	sta ZPLZS.SongIndex			; Restore Subtune Index position where it is expected to be
+	rts
+	
+LoopPoint:
+	.byte $00
+	
+TimerOffset:
+	.byte $00
+	
+TimerSpeed:
+	.byte $00
+	
+TotalPlayTime:
+	.dword $00000000
+	
+LoopPlayTime:
+	.dword $00000000
+.endp
+
+;-----------------
+
+;* 32-bit Division Routine
+;* ACC/AUX -> ACC, remainder in EXT
+
+.proc Div32
+	lda #0
+	
+	sta Ext+0
+	sta Ext+1
+	sta Ext+2
+	sta Ext+3
+	
+	ldy #32
+	
+Loop:
+	asl Acc+0
+	rol Acc+1
+	rol Acc+2
+	rol Acc+3
+	
+	rol @
+	rol Ext+1
+	
+	//
+	rol Ext+2
+	rol Ext+3
+	//
+	
+	tax
+	cmp Aux+0
+	
+	//
+	lda Ext+3
+	sbc Aux+3
+	bcc Div2
+	sta Ext+3
+	//
+	
+	//
+	lda Ext+2
+	sbc Aux+2
+	bcc Div2
+	sta Ext+2
+	//
+	
+	lda Ext+1
+	sbc Aux+1
+	bcc Div2
+	sta Ext+1
+	
+	txa
+	sbc Aux+0
+	tax
+	inc Acc+0
+	
+Div2:
+	txa
+	dey
+	bne Loop
+	
+Done:
+	sta Ext+0
+	rts
+	
+Acc:
+	.byte $00,$00,$00,$00
+Aux:
+	.byte $00,$00,$00,$00
+Ext:
+	.byte $00,$00,$00,$00
+.endp
 
 ;-----------------
 
