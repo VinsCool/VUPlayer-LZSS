@@ -11,9 +11,12 @@
 	.put [(?LZ_Count * 2) + 1] = [* >> 8]
 	.def ?LZ_Count += 1
 	.if (:OldFormat == TRUE)
+		ins :Filename,0,1
 		.byte $00, $00
+		ins :Filename,1
+	.else
+		ins :Filename
 	.endif
-	ins :Filename
 .endm
 
 .macro MakeSectionTable
