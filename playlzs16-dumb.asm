@@ -112,10 +112,24 @@ LZSSUpdate:
 	bcc LZSSUpdateDone
 	lda ZPLZS.BufferPointer+0
 	cmp ZPLZS.BufferEnd+0
-	bcs SetNewSongPtrs
-	
+	bcs LZSSUpdateCheckRemainingMatchBytes
+
 LZSSUpdateDone:
 	rts
+
+;-----------------
+	
+LZSSUpdateCheckRemainingMatchBytes:
+	ldx #8
+	lda ZPLZS.SongStereo
+	seq:ldx #17
+	
+LZSSUpdateCheckRemainingMatchBytesLoop:
+	lda ZPLZS.ByteCount,x
+	bne LZSSUpdateDone
+	dex
+	bpl LZSSUpdateCheckRemainingMatchBytesLoop
+	bcs SetNewSongPtrs		; Unconditional
 .endp
 
 ;* ----------------------------------------------------------------------------
