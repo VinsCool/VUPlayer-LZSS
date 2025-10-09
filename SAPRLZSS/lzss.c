@@ -32,6 +32,7 @@ void set_binary(void)
 }
 #endif
 
+int show_stats = 1;
 
 ///////////////////////////////////////////////////////
 // Bit encoding functions
@@ -204,6 +205,8 @@ static int match(const uint8_t *data, int pos, int size, int *mpos)
 // if last_literal is 1, we force the last byte to be encoded as a literal.
 static void lzop_backfill(struct lzop *lz, int last_literal)
 {
+    int last_bits = 0;
+
     // If no bytes, nothing to do
     if(!lz->size)
         return;
@@ -212,13 +215,16 @@ static void lzop_backfill(struct lzop *lz, int last_literal)
     {
         // Forced last literal - process one byte less
         lz->mlen[lz->size-1] = 0;
-        lz->size --;
-        if( !lz->size )
+        lz->bits[lz->size-1] = bits_literal;
+        last_bits = bits_literal;
+        if(lz->size == 1)
             return;
+        lz->size --;
     }
 
     // Init last bits
-    lz->bits[lz->size-1] = bits_literal;
+    lz->mlen[lz->size-1] = 0;
+    lz->bits[lz->size-1] = bits_literal + last_bits;
 
     // Go backwards in file storing best parsing
     for(int pos = lz->size - 2; pos>=0; pos--)
@@ -232,14 +238,15 @@ static void lzop_backfill(struct lzop *lz, int last_literal)
 
         // Check all posible match lengths, store best
         lz->bits[pos] = best;
+        lz->mlen[pos] = 0;
         lz->mpos[pos] = mp;
         for(int l=ml; l>=min_mlen; l--)
         {
-            int b;
+            int b = 0;
             if( pos+l < lz->size )
                 b = lz->bits[pos+l] + bits_match;
-            else
-                b = 0;
+            else if( pos + l == lz->size )
+                b = bits_match + last_bits;
             if( b < best )
             {
                 best = b;
@@ -258,7 +265,7 @@ static void lzop_backfill(struct lzop *lz, int last_literal)
 static int lzop_last_is_match(const struct lzop * lz)
 {
     int last = 0;
-    for(int pos = 0; pos < lz->size; )
+    for(int pos = fmt_literal_first ? 1 : 0; pos < lz->size; )
     {
         int mlen = lz->mlen[pos];
         if( mlen < min_mlen )
@@ -277,7 +284,7 @@ static int lzop_last_is_match(const struct lzop * lz)
     return last;
 }
 
-static int lzop_encode(struct bf *b, const struct lzop *lz, int pos, int lpos)
+static int lzop_encode(struct bf *b, const struct lzop *lz, int pos, int lpos, int channel)
 {
     if( pos <= lpos )
         return lpos;
@@ -289,7 +296,9 @@ static int lzop_encode(struct bf *b, const struct lzop *lz, int pos, int lpos)
     if( mlen < min_mlen )
     {
         // No match, just encode the byte
-//        fprintf(stderr,"L: %02x\n", lz->data[pos]);
+	if (show_stats == 2)
+		fprintf(stderr,"[%04X][%02X] L: %02X\n", pos, channel, lz->data[pos]);
+        
         add_bit(b,1);
         add_byte(b, lz->data[pos]);
         stat_len[0] ++;
@@ -299,8 +308,10 @@ static int lzop_encode(struct bf *b, const struct lzop *lz, int pos, int lpos)
     {
         int code_pos = (pos - mpos - (fmt_pos_start_zero ? 1 : 2)) & (max_off - 1);
         int code_len = mlen - min_mlen;
-//        fprintf(stderr,"M: %02x : %02x  [%04x]\n", code_pos, code_len,
-//                       (code_pos << bits_mlen) + code_len);
+	
+	if (show_stats == 2)
+		fprintf(stderr,"[%04X][%02X] M: %02x : %02x  [%04x]\n", pos, channel, code_pos, code_len, (code_pos << bits_mlen) + code_len);
+       
         add_bit(b,0);
         if( bits_mlen + bits_moff <= 8 )
             add_byte(b,(code_pos<<bits_mlen) + code_len);
@@ -541,7 +552,7 @@ int main(int argc, char **argv)
     char header_line[128];
    // int lpos[9];
    int lpos[channel_count];
-    int do_trim = 0;
+    //int do_trim = 0;
     int show_stats = 1;
     int bits_mtotal = bits_moff + bits_mlen;
     int bits_set = 0;
@@ -588,7 +599,7 @@ int main(int argc, char **argv)
                 bits_set |= 8;
                 break;
             case 't':
-                do_trim = 1;
+                //do_trim = 1;
                 break;
             case 'o':
                 bits_moff = atoi(optarg);
@@ -961,31 +972,29 @@ int main(int argc, char **argv)
 
     // Detect if at least one of the streams end in a match:
     int end_not_ok = 1;
-    int last_match = 0;
+    //int last_match = 0;
     //for(int i=0; i<9; i++)
     for(int i=0; i<channel_count; i++)
         if( !chn_skip[i] )
             end_not_ok &= lzop_last_is_match(&lz[i]);
 
-    // If all streams end in a match, we need to fix at least one to end in
-    // a literal - just fix stream 0, as this is always encoded:
+    // If all streams end in a match, we need to fix at least one to end in a literal
     if( force_last_literal && end_not_ok )
     {
-        //fprintf(stderr,"LZSS: fixing up stream #0 to end in a literal\n");
-        //lzop_backfill(&lz[0], 1);
-        
-        //for(int i = 0; i < channel_count; i++)
-        for(int i = channel_count-1; i >= 0; i--)
-        {
-        	if(!chn_skip[i] && lzop_last_is_match(&lz[i]))
+    	for(int i=0; i<channel_count; i++)
+        	if( !chn_skip[i] )
         	{
-        		fprintf(stderr,"LZSS: fixing up stream #%i to end in a literal\n", i);
         		lzop_backfill(&lz[i], 1);
-        		break;
+        		if (!lzop_last_is_match(&lz[i]))
+        		{
+        			fprintf(stderr,"LZSS: fixing up stream #%d to end in a literal\n", i);
+        			end_not_ok = 0;
+        			break;
+        		}
         	}
-        }
     }
-    else if( end_not_ok )
+    
+    if( end_not_ok )
     {
         fprintf(stderr,"WARNING: stream does not end in a literal.\n");
         fprintf(stderr,"WARNING: this can produce errors at the end of decoding.\n");
@@ -996,7 +1005,7 @@ int main(int argc, char **argv)
         //for(int i=8; i>=0; i--)
         for(int i=channel_count-1; i>=0; i--)
             if( !chn_skip[i] )
-                lpos[i] = lzop_encode(&b, &lz[i], pos, lpos[i]);
+                lpos[i] = lzop_encode(&b, &lz[i], pos, lpos[i], i);
     bflush(&b);
     // Close file
     if( output_file != stdout )
@@ -1010,12 +1019,21 @@ int main(int argc, char **argv)
     //fprintf(stderr,"ratio: %5d / %d = %5.2f%%\n", b.total, 9*sz, (100.0*b.total) / (9.0*sz));
     fprintf(stderr,"ratio: %5d / %d = %5.2f%%\n", b.total, channel_count*sz, (100.0*b.total) / (((float)channel_count)*sz));
     if( show_stats )
-        //for(int i=0; i<9; i++)
+    {
+        int total = 8;
         for(int i=0; i<channel_count; i++)
+        {
+            int ssize = 8;
             if( !chn_skip[i] )
-                fprintf(stderr," Stream #%d: %d bits,\t%5.2f%%,\t%5.2f%% of output\n", i,
-                        lz[i].bits[0], (100.0*lz[i].bits[0]) / (8.0*sz),
-                        (100.0*lz[i].bits[0])/(8.0*b.total) );
+                ssize = fmt_literal_first ? lz[i].bits[1] + 8 : lz[i].bits[0];
+
+            total += ssize;
+            fprintf(stderr," Stream #%d: %6d bits,  %5.2f%%,  %5.2f%% of output\n", i,
+                    ssize, (100.0*ssize) / (8.0*sz), (100.0*ssize)/(8.0*b.total) );
+        }
+        fprintf(stderr," Total    : %6d bits,  %5.2f%%,  %5.2f%% of output\n",
+                total, (100.0*total) / (8.0*9*sz), (100.0*total)/(8.0*b.total) );
+    }
 
     if( show_stats>1 )
     {
