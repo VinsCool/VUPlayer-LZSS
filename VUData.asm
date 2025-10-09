@@ -10,12 +10,8 @@ line_0	dta d"                                        "
 
 ;* Currently below the volume bars, mode 2, 5 lines, where 1 of them is swapped using the SHIFT key
 
-line_1	dta d"Line 1                                  "
-line_2	dta d"Line 2                                  "
-line_3	dta d"Line 3                                  "
-line_4	dta d"Line 4 (hold SHIFT to toggle)           "
-line_5	dta d"Line 5 (SHIFT is being held right now)  "
-
+	icl "Metadata.def"
+	
 ;* Version and credit
 
 line_6
@@ -72,7 +68,8 @@ line_0c
 
 line_0d 
 	dta $44
-	dta d"                                      "
+;	dta d"                                      "
+	dta d" 00 00 00 00   00 00 00 00            "
 ;	dta d"     P: 00 I: 00 L: 00 F: 00 S: 00    "
 	dta $44
 
@@ -106,7 +103,34 @@ b_eject	dta $5D,$00 			; 6, Eject, will act as a fancy "Exit" button for now...
 
 line_0f dta $42,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45
 	dta $45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$40
+	
+;* Some plaintext data used in few spots
 
+VUMeterColours
+	dta $20,$D0,$B0,$00
+	dta $40,$10,$D0,$00
+
+txt_REGION
+txt_PAL
+        dta d"PAL"*,d" "
+txt_NTSC
+        dta d"NTSC"*
+txt_VBI
+	dta d"xVBI"
+txt_STEREO
+	dta d", Mono  "
+	dta d", Stereo"
+	
+txt_PLAY
+	dta $7C,$00 		; PLAY button
+	dta d"PLAY  "
+txt_PAUSE
+	dta $7D,$00 		; PAUSE button
+	dta d"PAUSE "
+txt_STOP
+	dta $7B,$00 		; STOP button
+	dta d"STOP  "
+	
 ;-----------------
 	
 ; Display list
@@ -143,74 +167,5 @@ txt_toggle
 
 ;-----------------
 
-;------------------------------------------------------------------------------------------------------------------------------------;
-
-;* the idea here is to pick the best sweet spots each VBI multiples to form 1 "optimal" table, for each region
-;* it seems like the number of lines for the 'fix' value MUST be higher than either 156 for better stability
-;* else, it will 'roll' at random, which is not good! better sacrifice a few lines to keep it stable...
-;* strangely enough, NTSC does NOT suffer from this weird rolling effect... So that one can use values above or below 131 fine
-
-;	    x1  x2  x3  x4  x5  x6  x7  x8  x9  x10 x11 x12 x13 x14 x15 x16 
-
-/*
-	dta $EA
-tabppPAL	; "optimal" PAL timing table
-	dta $9C,$4E,$34,$27,$20,$1A,$17,$14,$12,$10,$0F,$0D,$0C,$0C,$0B,$0A
-	
-	dta $9C
-tabppPALfix	; interval offsets for timing stability 
-	dta $9C,$9C,$9C,$9C,$A0,$9C,$A1,$A0,$A2,$A0,$A5,$9C,$9C,$A8,$A5,$A0
-*/
-	
-;-----------------
-	
-;* NTSC needs its own adjustment table too... And so will cross-region from both side... Yay numbers! 
-;* adjustments between regions get a lot trickier however...
-;* for example: 
-;* 1xVBI NTSC to PAL, 130 on 156 does work for a stable rate, but it would get all over the place for another number 
-
-;	    x1  x2  x3  x4  x5  x6  x7  x8  x9  x10 x11 x12 x13 x14 x15 x16 
-
-/*
-	dta $FC
-tabppNTSC	; "optimal" NTSC timing table
-	dta $82,$41,$2B,$20,$1A,$15,$12,$10,$0E,$0D,$0B,$0A,$0A,$09,$08,$08
-	
-	dta $7E
-tabppNTSCfix	; interval offsets for timing stability 
-	dta $82,$82,$81,$80,$82,$7E,$7E,$80,$7E,$82,$79,$78,$82,$7E,$78,$80
-*/
-
-;-----------------
-
-;* Some plaintext data used in few spots
-
-VUMeterColours
-	dta $20,$D0,$B0,$00
-	dta $40,$10,$D0,$00
-
-txt_REGION
-txt_PAL
-        dta d"PAL"*,d" "
-txt_NTSC
-        dta d"NTSC"*
-txt_VBI
-	dta d"xVBI"
-txt_STEREO
-	dta d", Mono  "
-	dta d", Stereo"
-	
-txt_PLAY
-	dta $7C,$00 		; PLAY button
-	dta d"PLAY  "
-txt_PAUSE
-	dta $7D,$00 		; PAUSE button
-	dta d"PAUSE "
-txt_STOP
-	dta $7B,$00 		; STOP button
-	dta d"STOP  "
-
-;-----------------
-	
 ;------------------------------------------------------------------------------------------------------------------------------------;
 

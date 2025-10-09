@@ -112,24 +112,12 @@ LZSSUpdate:
 	bcc LZSSUpdateDone
 	lda ZPLZS.BufferPointer+0
 	cmp ZPLZS.BufferEnd+0
-	bcs LZSSUpdateCheckRemainingMatchBytes
-
+	bcc LZSSUpdateDone
+	lda ZPLZS.ByteCount		; Only 1 Channel needs to be checked
+	beq SetNewSongPtrs		; Byte Count of 0 -> Done
+	
 LZSSUpdateDone:
 	rts
-
-;-----------------
-	
-LZSSUpdateCheckRemainingMatchBytes:
-	ldx #8
-	lda ZPLZS.SongStereo
-	seq:ldx #17
-	
-LZSSUpdateCheckRemainingMatchBytesLoop:
-	lda ZPLZS.ByteCount,x
-	bne LZSSUpdateDone
-	dex
-	bpl LZSSUpdateCheckRemainingMatchBytesLoop
-	bcs SetNewSongPtrs		; Unconditional
 .endp
 
 ;* ----------------------------------------------------------------------------
@@ -157,8 +145,10 @@ SetNewSongPtrsFull:
 	sty ZPLZS.FadingOut
 	sty ZPLZS.StopOnFadeout
 	sty ZPLZS.SongSequence
-	sty ZPLZS.LoopCount
-	sty ZPLZS.ProgramStatus
+	;sty ZPLZS.LoopCount
+	lda ZPLZS.LoopCount
+	and #%10000000			; Clear the Loop Count but preserve the Loop Flag
+	sta ZPLZS.LoopCount
 	sty bar_counter+0
 	sty bar_counter+1
 	sty bar_counter+2
@@ -172,40 +162,42 @@ SetNewSongPtrsFull:
 	sta ZPLZS.SongPointer+0
 	scc:inc ZPLZS.SongPointer+1
 	
+;-----------------
+
 ;* If the routine is called from this label, it will use the current parameters instead
 
 SetNewSongPtrs:
 	ldy ZPLZS.SongSequence
 	lda (ZPLZS.SongPointer),y
-	bpl SetNewSongPtrs_c
+	bpl SetNewSongPtrs_b
 	cmp #$FF
-	bne SetNewSongPtrs_b
-	bit ZPLZS.LoopCount
-	bpl SetNewSongPtrs_a
+	bne SetNewSongPtrs_a
 	lda #0
 	sta ZPLZS.SongSequence
-	beq SetNewSongPtrs
-	
-SetNewSongPtrs_a:
+	bit ZPLZS.LoopCount
+	bmi SetNewSongPtrs
 	lda #$F0
 	sta ZPLZS.FadingOut		; Force instant Song End
-	bmi SetNewSongPtrsDone
+	bmi SetNewSongPtrs
 	
-SetNewSongPtrs_b:
+SetNewSongPtrs_a:
 	and #$7F
 	sta ZPLZS.SongSequence
 	lda bar_loop			; Set the Progress bar position at the start of the Loop Point
 	sta bar_counter			; So it will match visually during playback
-	ldx ZPLZS.LoopCount		; How many times the End of a Sequence was reached so far?
+	lda ZPLZS.LoopCount		; Get the Loop Count
+	and #%10000000			; Preserve the Loop Flag
+	inc ZPLZS.LoopCount		; Increment the Loop Count
+	ora ZPLZS.LoopCount		; Merge the Loop Count with the Loop Flag
+	sta ZPLZS.LoopCount		; Update the value in memory
 	bmi SetNewSongPtrs		; Bit 7 set -> Infinitely looping, resume playback from the Loop Point
-	inx				; Increment the Loop Counter
-	stx ZPLZS.LoopCount		; The update the value in memory
-	cpx #2				; Has it been looping at least once?
+	lda ZPLZS.LoopCount		; How many times the End of a Sequence was reached so far?
+	cmp #2				; Has it been looping at least once?
 	bcc SetNewSongPtrs		; If not, resume playback from the Loop Point
 	jsr trigger_fade_immediate	; Initialise fadeout sequence for the remainder of playback time
 	bmi SetNewSongPtrs		; Guaranteed to return with the Negative Flag set
 	
-SetNewSongPtrs_c:
+SetNewSongPtrs_b:
 	sta ZPLZS.SongSection		; Actually useless, this is just a value to Display for debugging purposes
 	asl @
 	tay
@@ -215,7 +207,6 @@ SetNewSongPtrs_c:
 	mwa (ZPLZS.TMP0),y ZPLZS.BufferEnd
 	mva #$FF ZPLZS.BufferStatus
 	inc ZPLZS.SongSequence
-SetNewSongPtrsDone:
 	rts
 	
 ;-----------------
@@ -239,7 +230,6 @@ UpdateVolumeFadeoutDone:
 ;-----------------
 
 ;* Toggle Stop, similar to pause, except Play will restart the tune from the beginning
-;* The routine will continue into the following subroutines, a RTS will be found at the end of setpokeyfull further below 
 
 stop_toggle 
 	bit ZPLZS.PlayerStatus		; What is the current Player state?
@@ -253,73 +243,80 @@ set_stop
 
 ;-----------------
 
-;* Stop/Pause the player and reset the POKEY registers, a RTS will be found at the end of setpokeyfull further below 
+;* Reset the POKEY registers
 
-stop_pause_reset
-	lda #3				; Default SKCTL value, needed for handling Keyboard
+.proc ResetPokey
+	lda #%00000011			; Default SKCTL value, needed for handling Keyboard
 	sta POKSKC+0
 	sta POKSKC+1
 	lda #0				; Default POKEY values
 	ldx #8				; 4xAUDF + 4xAUDC + 1xAUDCTL
-stop_pause_reset_a 
-	sta SDWPOK0,x			; Clear all POKEY values in memory 
+Loop:	sta SDWPOK0,x			; Clear all POKEY values in memory 
 	sta SDWPOK1,x			; Write to both POKEYs even if there is no Stereo setup, that won't harm anything
 	dex
-	bpl stop_pause_reset_a		; Repeat until all channels were cleared
-	rts
+	bpl Loop			; Repeat until all channels were cleared
+	sta WSYNC
+	sta SKCTL
+	sta SKCTL+$10
+	sta WSYNC
+	sta STIMER
+	sta STIMER+$10
+;	rts				; Finish in the SetPokey Routine
+.endp
 
-;----------------- 
+;-----------------
 
 ;* Setpokey, intended for double buffering the decompressed LZSS bytes as fast as possible for timing and cosmetic purpose
+;* Register Writes are done every 8 Cycles, based on the ZX2-Chunk timing
 
-setpokeyfull
-	lda POKSKC+0
-	sta $D20F 
-	ldy SDWPOK0.POKCTL
-	lda SDWPOK0.POKF0
-	ldx SDWPOK0.POKC0
+.proc SetPokey
+	ldx #0
+	lda SDWPOK0.POKF0,x
+	ldy SDWPOK0.POKC0,x
 	sta $D200
-	stx $D201
-	lda SDWPOK0.POKF1
-	ldx SDWPOK0.POKC1
+	lda SDWPOK0.POKF1,x
+	sty $D201
+	ldy SDWPOK0.POKC1,x
 	sta $D202
-	stx $D203
-	lda SDWPOK0.POKF2
-	ldx SDWPOK0.POKC2
+	lda SDWPOK0.POKF2,x
+	sty $D203
+	ldy SDWPOK0.POKC2,x
 	sta $D204
-	stx $D205
-	lda SDWPOK0.POKF3
-	ldx SDWPOK0.POKC3
+	lda SDWPOK0.POKF3,x
+	sty $D205
+	ldy SDWPOK0.POKC3,x
 	sta $D206
-	stx $D207
-	sty $D208
+	lda SDWPOK0.POKCTL,x
+	sty $D207
+	ldy POKSKC+0,x
+	sta $D208
+	#CYCLE #4
+	sty $D20F
 	lda ZPLZS.MachineStereo
-	beq setpokeyfulldone
-	
-setpokeyfullstereo
-	lda POKSKC+1
-	sta $D21F 
-	ldy SDWPOK1.POKCTL
-	lda SDWPOK1.POKF0
-	ldx SDWPOK1.POKC0
+	beq Done
+	lda SDWPOK1.POKF0,x
+	ldy SDWPOK1.POKC0,x
 	sta $D210
-	stx $D211
-	lda SDWPOK1.POKF1
-	ldx SDWPOK1.POKC1
+	lda SDWPOK1.POKF1,x
+	sty $D211
+	ldy SDWPOK1.POKC1,x
 	sta $D212
-	stx $D213
-	lda SDWPOK1.POKF2
-	ldx SDWPOK1.POKC2
+	lda SDWPOK1.POKF2,x
+	sty $D213
+	ldy SDWPOK1.POKC2,x
 	sta $D214
-	stx $D215
-	lda SDWPOK1.POKF3
-	ldx SDWPOK1.POKC3
+	lda SDWPOK1.POKF3,x
+	sty $D215
+	ldy SDWPOK1.POKC3,x
 	sta $D216
-	stx $D217
-	sty $D218
-	
-setpokeyfulldone
-	rts
+	lda SDWPOK1.POKCTL,x
+	sty $D217
+	ldy POKSKC+1,x
+	sta $D218
+	#CYCLE #4
+	sty $D21F
+Done:	rts	
+.endp
 
 ;-----------------
 
@@ -339,7 +336,7 @@ set_pause
 	rts
 	
 set_play_from_a_stop
-	ldx #$01
+	ldx #$01			; Insert a tiny "click" sound in all Channels ~1 Frame before Playback starts from a Stop
 	
 set_play_from_a_stop_a
 	stx $D201

@@ -10,55 +10,35 @@
 ;------------------------------------------------------------------------------------------------------------------------------------;
 
 Start:
-
-/*
-	sei			; Set Interrupt Disable Status
-	cld			; Clear Decimal Flag
-	
-;	jsr WaitForVBlank	; Too early, this will cause problems if it is executed before NMIEN is Reset in time!
-
-	lda #%11111110		; Disable BASIC and OS ROMs, leaving almost all memory from $C000 to $FFFF available!	
-	sta PORTB		; This will only work for extended XL memory, however
-*/
-
 	lda #0
 	sta NMIEN
 	sta IRQEN
 	sta DMACTL
-
 	tax
 	sta.w:rne ZEROPAGE,x-	; Reset Zeropage Variables
-	
 	tsx
 	stx ZPLZS.StackPointer	; Return Address from the Stack
-	
 	sta COLBK
 	sta COLPF0
 	sta COLPF2
 	sta COLPF3
 	lda #$0F
 	sta COLPF1
-	
-;	ldx ZPLZS.MemBank
-;	jsr BankSwitch
-	
 	jsr WaitForVBlank
 
 	mva LZDATA+0 ZPLZS.SongIndex
 	mva LZDATA+1 ZPLZS.SongCount
 	mva LZDATA+2 ZPLZS.RasterbarToggle
 	mva LZDATA+3 ZPLZS.RasterbarColour
-	
 	mva #2 ZPLZS.PlayerMenuIndex
-	
 	jsr WaitForVBlank
+	
 	jsr DetectMachineRegion
 	jsr DetectStereoMode
-	
 	jsr WaitForVBlank
+	
 	jsr SetNewSongPtrsFull
-	jsr stop_pause_reset
-	jsr setpokeyfull
+	jsr ResetPokey
 	jsr set_stop		; clear the POKEY registers, initialise the LZSS driver, and set VUPlayer to Stop
 	jsr set_subtune_count	; update the subtunes position and total values
 	jsr set_highlight
@@ -68,7 +48,6 @@ Start:
 	lda ZPLZS.MachineRegion
 	:2 asl @
 	tax
-	
 	lda VUMeterColours+0,x
 	sta ZPVOL.Colour+0	; Red
 	lda VUMeterColours+1,x
@@ -77,17 +56,15 @@ Start:
 	sta ZPVOL.Colour+2	; Green
 	lda VUMeterColours+3,x
 	sta ZPVOL.Colour+3	; Gray
-	
 	jsr WaitForVBlank
+	
 	mwa #enemi NMI		; Set up our own Interrupt Vector Addresses
 	mwa #dlist DLISTL	; Start Address of the Display List
 	mva #%10000000 NMIEN	; Enable Display List Interrupts only for the Splash Screen gradient effect
 	mva #>VUFONT CHBASE	; Load the font address into the shadow character register
-	
 	lda #$22		; DMA Enable, Normal Playfield
 	sta ZPLZS.DMAToggle
 	sta DMACTL		; Write to Direct Memory Access Control Address
-
 	ldx #120		; Load into index x a 120 frames buffer
 	jsr WaitForSomeTime
 
@@ -95,35 +72,21 @@ Start:
 
 	mva #%11000000 NMIEN	; Enable Display List and VBlank Interrupts
 	cli			; Clear Interrupt Disable Status
-	
 	jsr toggle_vumeter	; make sure this is also set properly before playing
 	jsr set_play		; now is the good time to set VUPlayer to Play
 	
 ResetLoop:
+	sta ZPLZS.ProgramStatus
 	jsr SetNewSongPtrsFull
 	jsr PrintSongInfos
 	jsr ResetTimer
 	
 ResetLoop_a:
-	jsr stop_pause_reset
-	jsr setpokeyfull
+	jsr ResetPokey
 	jsr SetPlaybackSpeed
 	jsr WaitForVBlank
 	jsr WaitForSync
 	
-/*
-	ldx #0
-	
-ResetLoop_b:
-	mva ZEROPAGE,x $C000,x
-	dex
-	bne ResetLoop_b
-	nop
-	mva #%11111111 PORTB
-	nop
-	mva #%11111110 PORTB
-*/
-
 ;-----------------
 
 ;------------------------------------------------------------------------------------------------------------------------------------;
@@ -139,9 +102,8 @@ MainLoop:
 	jsr WaitForScanline			; Wait until Playback is ready to process
 	bit ZPLZS.RasterbarToggle		; Is there a Rasterbar to display during playback?
 	spl:mva ZPLZS.RasterbarColour COLBK	; Negative Flag Set -> Update Background colour
-	jsr setpokeyfull			; Update POKEY registers
+	jsr SetPokey				; Update POKEY registers
 	jsr LZSSPlayFrame			; Play 1 LZSS frame
-;	scc:jsr SetNewSongPtrs			; Returning with Carry Flag Set -> Update Song Pointers
 	jsr SwapBufferCopy			; Dual Mono -> Copy buffered values from Left POKEY to Right POKEY
 	jsr SetVolumeLevel			; Apply Volume Level changes and Mute channels with the Volume Mask Bit Set
 	jsr CheckForTwoToneBit			; Update SKCTL to use Two-Tone Filter if the Volume Only Bit from AUDC0 is Set
@@ -404,6 +366,7 @@ WaitForScanlineSkip:
 	ror ZPLZS.SyncStatus
 	
 WaitForScanlineDone:
+	sta WSYNC
 	rts
 .endp
 
@@ -995,7 +958,7 @@ FrameAdvance_f:
 	jsr seek_forward
 	
 FrameAdvance_g:
-	jsr setpokeyfull
+	jsr SetPokey
 	
 FrameAdvance_h:
 	lda ZPLZS.PlayerStatus
@@ -1186,8 +1149,7 @@ dli_toggler equ *-1			; FIXME: Rename and move to Zeropage variables
 ; stop and quit
 
 .proc ReturnToDOS
-	jsr stop_pause_reset
-	jsr setpokeyfull
+	jsr ResetPokey
 	ldx ZPLZS.StackPointer
 	txs
 	mva #$8D ZPLZS.TMP0

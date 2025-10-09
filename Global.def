@@ -1,0 +1,166 @@
+;* Most Global Definitions should be part of this file, unless specified otherwise
+;* Major Code re-organisation and cleanup will be needed at a later time, for now this is what it is
+;* Macros are used for various tasks, in order to avoid doing it all by hand and suffer anal pain in the process
+;* This is not the most elegant setup, but it mostly works okay, and so that's good enough I guess
+
+;-----------------
+
+;//---------------------------------------------------------------------------------------------
+
+.def INVALID = -1
+.def TRUE = 1
+.def FALSE = 0
+.def NULL = 0
+
+.def NTSC = 1
+.def PAL = 0
+.def STEREO = 1
+.def MONO = 0
+
+;SAP_BINARY		equ 0		; 0 == XEX (VUPlayer-LZSS), 1 == SAP (Minimal LZSS Driver)
+
+;* ORG addresses can always be changed based on how memory is layed out, as long as it fits, it should work fine
+
+ZEROPAGE		equ $0080
+STACK			equ $0100
+;LZDATA			equ $2000
+;RELOCATOR		equ STACK
+;DRIVER			equ $D800
+;BUFFERS		equ $ED00
+
+;* Screen line for synchronization, important to set with a good value to get smooth execution
+
+VLINE			equ 22
+VBLANK_SCANLINE		equ (248 / 2)
+PAL_SCANLINE		equ (312 / 2)
+NTSC_SCANLINE		equ (262 / 2)
+
+;* Rasterbar
+
+RASTERBAR_TOGGLE	equ %10000000	; Bit 7 -> Toggle on/off
+RASTERBAR_COLOUR	equ $69		; $69 is a nice purpleish hue
+
+;* Default Subtune to be played upon loading
+
+TUNE_DEF		equ 0
+;TUNE_NUM		equ [(SongTableEnd - SongTable) / 8]
+
+	icl "atari.def"
+	
+	org ZEROPAGE
+	icl "lzsspZP.asm"
+	
+	org BUFFERS
+	.ds ((2 * 9) * 256)
+	
+;-----------------
+
+;//---------------------------------------------------------------------------------------------
+
+.macro LoadData Filename, OldFormat
+	.put [(?LZ_Count * 2) + 0] = [* & 255]
+	.put [(?LZ_Count * 2) + 1] = [* >> 8]
+	.def ?LZ_Count += 1
+	.if (:OldFormat == TRUE)
+		ins :Filename,0,1
+		.byte $00, $00
+		ins :Filename,1
+	.else
+		ins :Filename
+	.endif
+	.put [(?LZ_Count * 2) + 0] = [* & 255]
+	.put [(?LZ_Count * 2) + 1] = [* >> 8]
+.endm
+
+.macro MakeSectionTable
+	.rept (?LZ_Count + 1)
+		.word [.get[(# * 2) + 0] | .get[(# * 2) + 1] << 8]
+	.endr
+.endm
+
+.macro MakeSongTable
+	.rept ?SNG_Count
+		.word [.get[$1000 + (# * 2) + 0] | .get[$1000 + (# * 2) + 1] << 8]
+	.endr
+.endm
+
+.macro MakeSongTimer Region, TotalTime, LoopTime, IsPreciseTime
+	.def ?TotalTimeFrames = :TotalTime
+	.def ?LoopTimeFrames = :LoopTime
+	.def ?FramesPerSecond = 50
+	.def ?Adjustment = ?FramesPerSecond
+	.if (:Region == NTSC)
+		.def ?FramesPerSecond = 60
+	.endif
+	.if (:IsPreciseTime != TRUE)
+		.def ?TotalTimeFrames = ?TotalTimeFrames * ?FramesPerSecond
+		.def ?LoopTimeFrames = ?LoopTimeFrames * ?FramesPerSecond
+	.endif
+	.def ?TotalTimeFrames = $FFFFFF / (((?TotalTimeFrames * ?Adjustment) / ?FramesPerSecond) + 1)
+	.def ?LoopTimeFrames = ?TotalTimeFrames * ((?LoopTimeFrames * ?Adjustment) / ?FramesPerSecond)
+	.byte [[?TotalTimeFrames >> 16] & 255]
+	.byte [[?TotalTimeFrames >> 8] & 255]
+	.byte [[?TotalTimeFrames] & 255]
+	.byte [[?LoopTimeFrames >> 16] & 255]
+.endm
+
+.macro MakeSong Region, Adjust, Stereo, Speed, Time, Loop, IsPreciseTime
+	.if (?SEQ_Done == FALSE)
+		.error "Invalid Sequence Start, a GotoSequence or EndSequence command was not used prior!"
+	.else
+		.put [$1000 + (?SNG_Count * 2) + 0] = [* & 255]
+		.put [$1000 + (?SNG_Count * 2) + 1] = [* >> 8]
+		.def ?SNG_Count += 1
+		.def ?SEQ_Index = 0
+		.def ?SEQ_Done = FALSE
+		.byte [(((:Speed - 1) & %00000111) << 3) | (:Region << 2) | (:Adjust << 1) | :Stereo]
+		MakeSongTimer :Region, :Time, :Loop, :IsPreciseTime
+	.endif
+.endm
+
+.macro GotoSequence Offset
+	.if (?SEQ_Done == TRUE)
+		.error "Invalid Sequence Goto, a GotoSequence or EndSequence command was used already!"
+	.else
+		.if (:Offset < ?SEQ_Index)
+			.byte [:Offset | %10000000]
+			.def ?SEQ_Done = TRUE
+		.else
+			.error "Invalid Sequence Offset, the value of ", :Offset, " was given, but ", ?SEQ_Index - 1, " is the maximum!"
+		.endif
+	.endif
+.endm
+
+.macro EndSequence
+	.if (?SEQ_Done == TRUE)
+		.error "Invalid Sequence End, a GotoSequence or EndSequence command was used already!"
+	.else
+		.byte $FF
+		.def ?SEQ_Done = TRUE
+	.endif
+.endm
+
+.macro FindSection SectionAddress
+	.if (?SEQ_Done == TRUE)
+		.error "Invalid Sequence Order, a GotoSequence or EndSequence command was used already!"
+	.else
+		.def ?FoundSection = FALSE
+		.rept ?LZ_Count
+			.def ?LookupIndex = #
+			.def ?LookupAddress = [.get[(?LookupIndex * 2) + 0] | .get[(?LookupIndex * 2) + 1] << 8]
+			.if ((?FoundSection == FALSE) && (:SectionAddress == ?LookupAddress))
+				.def ?FoundSection = TRUE
+				.def ?SEQ_Index += 1
+				.byte ?LookupIndex
+			.endif
+		.endr
+		.if (?FoundSection == FALSE)
+			.error "Could not find Matching Index!"
+		.endif
+	.endif
+.endm
+
+;-----------------
+		
+;//---------------------------------------------------------------------------------------------
+

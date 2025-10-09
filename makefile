@@ -56,3 +56,7 @@ mergesap:
 	@echo -e "> Assembling MergeSAP..."
 	@$(call MADS,$(OBX_MERGESAP),ASSEMBLED/MergeSAP.sap,ASSEMBLED/MergeSAP.lst)
 	
+lzss-sap:
+	@echo -e "> Building lzss-sap..."
+	gcc -O2 -Wall -o ./SAPRLZSS/lzss ./SAPRLZSS/lzss.c
+	

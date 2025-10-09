@@ -1,0 +1,22 @@
+/*
+line_1:	.byte "Line 1                                  "
+line_2:	.byte "Line 2                                  "
+line_3:	.byte "Line 3                                  "
+line_4:	.byte "Line 4 (hold SHIFT to toggle)           "
+line_5:	.byte "Line 5 (SHIFT is being held right now)  "
+*/
+
+/*
+line_1:	.byte "Mega Man II                             "
+line_2:	.byte "NES-Style PoKEY Soundtrack              "
+line_3:	.byte "2018-2025 - Dippy & Fragmare            "
+line_4:	.byte "                                        "
+line_5:	.byte "Wood Man, More Like, Weed Man... :3c    "
+*/
+
+line_1	dta d"Fire 'N Ice (Solomon's Key 2)           "
+line_2	dta d"NES-Style PoKEY Soundtrack              "
+line_3	dta d"2025 - VinsCool                         "
+line_4	dta d"                                        "
+line_5	dta d"Crushing NTSC to PAL Was Fucking Painful"
+
