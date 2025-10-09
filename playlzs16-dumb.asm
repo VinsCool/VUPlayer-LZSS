@@ -112,9 +112,7 @@ LZSSUpdate:
 	bcc LZSSUpdateDone
 	lda ZPLZS.BufferPointer+0
 	cmp ZPLZS.BufferEnd+0
-	bcc LZSSUpdateDone
-	lda ZPLZS.ByteCount		; Only 1 Channel needs to be checked
-	beq SetNewSongPtrs		; Byte Count of 0 -> Done
+	bcs SetNewSongPtrs
 	
 LZSSUpdateDone:
 	rts
