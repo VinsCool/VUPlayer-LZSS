@@ -80,13 +80,14 @@ ResetLoop:
 	jsr SetNewSongPtrsFull
 	jsr PrintSongInfos
 	jsr ResetTimer
+	jsr WaitForVBlank
 	
 ResetLoop_a:
-	jsr ResetPokey
 	jsr SetPlaybackSpeed
 	jsr WaitForVBlank
 	jsr WaitForSync
-	
+	jsr ResetPokey
+		
 ;-----------------
 
 ;------------------------------------------------------------------------------------------------------------------------------------;
