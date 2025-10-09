@@ -553,7 +553,7 @@ int main(int argc, char **argv)
    // int lpos[9];
    int lpos[channel_count];
     //int do_trim = 0;
-    int show_stats = 1;
+    //int show_stats = 1;
     int bits_mtotal = bits_moff + bits_mlen;
     int bits_set = 0;
     int force_last_literal = 1;
