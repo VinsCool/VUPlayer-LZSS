@@ -58,5 +58,5 @@ mergesap:
 	
 lzss-sap:
 	@echo -e "> Building lzss-sap..."
-	gcc -O2 -Wall -o ./SAPRLZSS/lzss ./SAPRLZSS/lzss.c
+	gcc -O2 -Wall -o ./lzss ./lzss.c
 	
