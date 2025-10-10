@@ -84,6 +84,7 @@ ResetLoop:
 	
 ResetLoop_a:
 	jsr SetPlaybackSpeed
+	jsr SetStereoMode
 	jsr WaitForVBlank
 	jsr WaitForSync
 	jsr ResetPokey

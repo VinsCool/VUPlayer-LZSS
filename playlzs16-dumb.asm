@@ -606,13 +606,26 @@ DetectStereoModeDone:
 
 .proc SetStereoMode
 	lda #%00000000
+	sta ZPLZS.VolumeLevel+0
+	sta ZPLZS.VolumeLevel+1
+	sta ZPLZS.VolumeLevel+2
+	sta ZPLZS.VolumeLevel+3
+	sta ZPLZS.VolumeLevel+4
+	sta ZPLZS.VolumeLevel+5
+	sta ZPLZS.VolumeLevel+6
+	sta ZPLZS.VolumeLevel+7
 	sta ZPLZS.VolumeMask
 	lda ZPLZS.MachineStereo
 	beq SetStereoModeDone
 	cmp ZPLZS.SongStereo
 	beq SetStereoModeDone
-	lda #%01101001
-	sta ZPLZS.VolumeMask
+;	lda #%01101001
+;	sta ZPLZS.VolumeMask
+	lda #-4
+	sta ZPLZS.VolumeLevel+1
+	sta ZPLZS.VolumeLevel+2
+	sta ZPLZS.VolumeLevel+4
+	sta ZPLZS.VolumeLevel+7
 	
 SetStereoModeDone:
 	rts
