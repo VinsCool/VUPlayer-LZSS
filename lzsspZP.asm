@@ -7,16 +7,17 @@ TMP1		.ds 1
 TMP2		.ds 1
 TMP3		.ds 1
 
-BufferStart	.ds 2	;* Start Buffer(s) Address, first byte is always the Channel Bit Byte, and must be fetched from it each frame
-BufferEnd	.ds 2	;* End Buffer(s) Address
+;;BufferStart	.ds 2	;* Start Buffer(s) Address, first byte is always the Channel Bit Byte, and must be fetched from it each frame
 BufferPointer	.ds 2	;* Current Buffer(s) Address
+BufferEnd	.ds 2	;* End Buffer(s) Address
 
 BufferBitByte	.ds 1	;* Buffer Bit Byte, used for Match or Literal, must be initialised to 1 each time a new File is decompressed
 
 BufferStatus	.ds 1	;* Buffer Status, Negative flag must be set to force Initialisation in the middle of playback
-BufferOffset	.ds 1	;* Buffer Offset, used to update the Current Buffer Address and remaining Buffer Size to process
+;BufferOffset	.ds 1	;* Buffer Offset, used to update the Current Buffer Address and remaining Buffer Size to process
 
-ChannelBitByte	.ds 3*1	;* Channel Bit Byte, used for skipping channels when no data is needed for it
+InitialBitByte	.ds 3*1	;* Initial Bit Bytes values, with Per LZSS stream(!) parameters for Region, Stereo and Song Speed
+ChannelBitByte	.ds 3*1	;* Channel Bit Bytes used for skipping channels when no data is needed for it
 
 ChannelOffset	.ds 1	;* Channel Offset, common for all Channel Buffers
 
@@ -125,6 +126,8 @@ bar_loop	.ds 1
 ;-----------------
 
 ;* VUMeter Volume Decay Buffer
+
+.align $100
 
 .local ZPVOL
 Buffer		.ds 32

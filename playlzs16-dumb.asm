@@ -6,10 +6,12 @@
 ;* So here it begins, yet another time, woohooo!!!
 
 .proc LZSSPlayFrame
-	ldx #8
-	lda ZPLZS.SongStereo
-	seq:ldx #17
+;	ldx #8
+;	lda ZPLZS.SongStereo
+;	seq:ldx #17
 	mva #>BUFFERS ZPLZS.ChannelBuffer+1
+	ldy ZPLZS.SongStereo
+	ldx LZSSChannelCount,y
 	ldy ZPLZS.BufferStatus
 	beq LZSSPlayFrameBegin
 	
@@ -18,20 +20,13 @@ LZSSInitialise:
 	iny
 	sty ZPLZS.ChannelOffset
 	sty ZPLZS.BufferStatus
-	lda ZPLZS.BufferStart+0
-	clc
-	adc #3
-	sta ZPLZS.BufferPointer+0
-	lda ZPLZS.BufferStart+1
-	adc #0
-	sta ZPLZS.BufferPointer+1
 	
 LZSSInitialiseLoop:
-	mva (ZPLZS.BufferPointer),y (ZPLZS.ChannelBuffer),y
+	lda (ZPLZS.BufferPointer),y
+	inw ZPLZS.BufferPointer
+	sta (ZPLZS.ChannelBuffer),y
 	sta SDWPOK,x
 	sty ZPLZS.ByteCount,x
-	inc ZPLZS.BufferPointer+0
-	sne:inc ZPLZS.BufferPointer+1
 	inc ZPLZS.ChannelBuffer+1
 	dex
 	bpl LZSSInitialiseLoop
@@ -40,16 +35,14 @@ LZSSInitialiseLoop:
 	sty ZPLZS.BufferBitByte
 	rts
 	
+LZSSChannelCount:
+	.byte 8, 17
+	
 LZSSPlayFrameBegin:
-	sty ZPLZS.BufferOffset
-	ldy #2
-	
-LZSSPlayFrameBegin_a:
-	lda (ZPLZS.BufferStart),y
-	sta ZPLZS.ChannelBitByte,y
-	dey
-	bpl LZSSPlayFrameBegin_a
-	
+	mva ZPLZS.InitialBitByte+0 ZPLZS.ChannelBitByte+0
+	mva ZPLZS.InitialBitByte+1 ZPLZS.ChannelBitByte+1
+	mva ZPLZS.InitialBitByte+2 ZPLZS.ChannelBitByte+2
+
 LZSSPlayFrameContinue:
 	lsr ZPLZS.ChannelBitByte+2
 	ror ZPLZS.ChannelBitByte+1
@@ -65,23 +58,21 @@ LZSSPlayFrameSkipByte:
 LZSSPlayFrameReadByte:
 	lda ZPLZS.ByteCount,x
 	bne LZSSPlayFrameCopyByte
+	ldy #0				;* Best place to set Y for the Buffer Offset
 	lsr ZPLZS.BufferBitByte
 	bne LZSSPlayFrameGetByte
-	ldy ZPLZS.BufferOffset
-	inc ZPLZS.BufferOffset
 	lda (ZPLZS.BufferPointer),y
+	inw ZPLZS.BufferPointer
 	ror @
 	sta ZPLZS.BufferBitByte
 	
 LZSSPlayFrameGetByte:
-	ldy ZPLZS.BufferOffset
-	inc ZPLZS.BufferOffset
 	lda (ZPLZS.BufferPointer),y
+	inw ZPLZS.BufferPointer
 	bcs LZSSPlayFrameWriteByte
 	sta ZPLZS.LastOffset,x
-	ldy ZPLZS.BufferOffset
-	inc ZPLZS.BufferOffset
 	lda (ZPLZS.BufferPointer),y
+	inw ZPLZS.BufferPointer
 	sta ZPLZS.ByteCount,x
 	
 LZSSPlayFrameCopyByte:
@@ -102,11 +93,6 @@ LZSSPlayFrameNext:
 	
 LZSSUpdate:
 	inc ZPLZS.ChannelOffset
-	lda ZPLZS.BufferPointer+0
-	clc
-	adc ZPLZS.BufferOffset
-	sta ZPLZS.BufferPointer+0
-	scc:inc ZPLZS.BufferPointer+1
 	lda ZPLZS.BufferPointer+1
 	cmp ZPLZS.BufferEnd+1
 	bcc LZSSUpdateDone
@@ -129,21 +115,9 @@ SetNewSongPtrsFull:
 	tax
 	mwa LZDATA+6,x ZPLZS.SongPointer
 	ldy #0				; Reset player variables
-	lda (ZPLZS.SongPointer),y
-	sty ZPLZS.SongStereo
-	lsr @
-	rol ZPLZS.SongStereo
-	sty ZPLZS.AdjustSpeed
-	lsr @
-	ror ZPLZS.AdjustSpeed		; I honestly forgot why I added this parameter but whatever
-	sty ZPLZS.SongRegion
-	lsr @
-	rol ZPLZS.SongRegion
-	sta ZPLZS.SongSpeed		; 2 Unused Bits remain, but it's safe to assume no invalid data will be used
 	sty ZPLZS.FadingOut
 	sty ZPLZS.StopOnFadeout
 	sty ZPLZS.SongSequence
-	;sty ZPLZS.LoopCount
 	lda ZPLZS.LoopCount
 	and #%10000000			; Clear the Loop Count but preserve the Loop Flag
 	sta ZPLZS.LoopCount
@@ -200,10 +174,34 @@ SetNewSongPtrs_b:
 	asl @
 	tay
 	mwa LZDATA+4 ZPLZS.TMP0
-	mwa (ZPLZS.TMP0),y ZPLZS.BufferStart
+	mwa (ZPLZS.TMP0),y ZPLZS.BufferPointer
 	iny
 	mwa (ZPLZS.TMP0),y ZPLZS.BufferEnd
-	mva #$FF ZPLZS.BufferStatus
+	ldy #2
+	mva (ZPLZS.BufferPointer),y ZPLZS.InitialBitByte,y
+	dey
+	mva (ZPLZS.BufferPointer),y ZPLZS.InitialBitByte,y
+	dey
+	mva (ZPLZS.BufferPointer),y ZPLZS.InitialBitByte,y
+	adw ZPLZS.BufferPointer #3
+	lda ZPLZS.InitialBitByte+2
+	asl @
+	sty ZPLZS.SongStereo
+	rol ZPLZS.SongStereo
+	asl @
+	sty ZPLZS.SongRegion
+	rol ZPLZS.SongRegion
+	asl @
+	sty ZPLZS.SongSpeed
+	rol ZPLZS.SongSpeed
+	asl @
+	rol ZPLZS.SongSpeed
+	asl @
+	rol ZPLZS.SongSpeed
+	dey
+	sty ZPLZS.BufferStatus
+	jsr SetPlaybackSpeed
+	jsr SetStereoMode
 	inc ZPLZS.SongSequence
 	rts
 	

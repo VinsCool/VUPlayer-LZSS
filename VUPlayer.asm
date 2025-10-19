@@ -78,17 +78,16 @@ Start:
 ResetLoop:
 	sta ZPLZS.ProgramStatus
 	jsr SetNewSongPtrsFull
-	jsr PrintSongInfos
 	jsr ResetTimer
-	jsr WaitForVBlank
+;	jsr WaitForVBlank
 	
 ResetLoop_a:
-	jsr SetPlaybackSpeed
-	jsr SetStereoMode
+;	jsr SetPlaybackSpeed
+;	jsr SetStereoMode
 	jsr WaitForVBlank
-	jsr WaitForSync
 	jsr ResetPokey
-		
+	jsr WaitForSync
+	
 ;-----------------
 
 ;------------------------------------------------------------------------------------------------------------------------------------;
@@ -223,10 +222,10 @@ deli_d
 ;* VBI will run from here
 
 vbi
-	bit ZPLZS.RasterbarToggle
-	bpl vbi_a
-	lda #56
-	sta COLBK
+;	bit ZPLZS.RasterbarToggle
+;	bpl vbi_a
+;	lda #56
+;	sta COLBK
 	
 vbi_a
 	sta NMIRES		; Reset NMI Status
@@ -269,6 +268,7 @@ vbi_g
 	jsr set_highlight
 	jsr print_player_infos	; print most of the stuff on screen using printhex or printinfo in bulk 
 	jsr draw_progress_bar	; draw the progress bar during playback, using frames counted during export
+	jsr PrintSongInfos
 	
 vbi_h
 	ldx <line_4		; Line 4 of text
@@ -278,8 +278,8 @@ vbi_h
 	stx txt_toggle		; Write to change the text on line 4
 	
 vbi_i
-	lda #0
-	sta COLBK
+;	lda #0
+;	sta COLBK
 
 ;-----------------
 
@@ -332,6 +332,13 @@ endnmi
 	lda VCOUNT		; Get Current Scanline / 2
 	cmp #VLINE		; Is it time for Sync yet?
 	bne WaitForSync		; Not Equal -> Keep waiting
+	lda #VLINE
+	sta ZPLZS.LastCount	; Expected Scanline to Sync
+	ldy #0
+	sty ZPLZS.SyncOffset
+	sty ZPLZS.SyncDelta
+	dey
+	sty ZPLZS.SyncStatus	; Force WaitForScanline to Skip
 	rts
 .endp
 	
@@ -379,8 +386,6 @@ WaitForScanlineDone:
 
 .proc SetPlaybackSpeed
 	lda ZPLZS.MachineRegion
-	bit ZPLZS.AdjustSpeed
-	bpl SetPlaybackSpeed_b
 	cmp ZPLZS.SongRegion
 	beq SetPlaybackSpeed_b
 
@@ -398,14 +403,6 @@ SetPlaybackSpeed_b:
 	sta ZPLZS.SyncDivision
 	lda ScanlineCountTable,y
 	sta ZPLZS.SyncCount
-	
-SetPlaybackSpeed_c:
-	lda #VLINE
-	sta ZPLZS.LastCount
-	ldy #0
-	sty ZPLZS.SyncOffset
-	dey
-	sty ZPLZS.SyncStatus
 	rts
 	
 ScanlineDivisionTable:
@@ -1427,9 +1424,7 @@ draw_registers_done
 
 begindraw
 	bit ZPLZS.PlayerStatus
-	bvs drawloop_done
-;	bvc begindraw_a
-;	rts
+	svc:rts				; Paused -> Return immediately, effectively "Freezing" the VUmeter Display
 	
 begindraw_a
 	ldx #7
@@ -1445,7 +1440,6 @@ begindraw_b
 	tay
 	pla
 	asl @
-;	adc #1
 	cmp ZPVOL.Buffer,y
 	smi:sta ZPVOL.Buffer,y
 	
@@ -1460,18 +1454,199 @@ begindraw_c
 	tay
 	pla
 	asl @
-;	adc #1
 	cmp ZPVOL.Buffer,y
 	smi:sta ZPVOL.Buffer,y
 	
+/*
+;* There was another attempt... I think...
+;* But fuck that, this is not quite the outcome I wanted...
+
+begindraw_b
+	lda SDWPOK0-0,x
+	and #$0F
+	beq begindraw_c
+	pha 
+	lda SDWPOK0-0,x
+	and #$F0
+	:5 lsr @
+	jsr TableJump
+	
+TryDistortionTable:
+	.word TryDistortion_0-1
+	.word TryDistortion_2-1
+	.word TryDistortion_4-1
+	.word TryDistortion_2-1
+	.word TryDistortion_8-1
+	.word TryDistortion_A-1
+	.word TryDistortion_C-1
+	.word TryDistortion_A-1
+	
+TryDistortion_0:
+	pla
+	jmp begindraw_c
+	
+TryDistortion_2:
+	pla
+	jmp begindraw_c
+	
+TryDistortion_4:
+	pla
+	jmp begindraw_c
+	
+TryDistortion_8:
+	pla
+	jmp begindraw_c
+	
+TryDistortion_A:
+	lda SDWPOK0-1,x
+	eor #$FF
+	
+	cmp #$90
+	bcs TryDistortion_A_a
+	cmp #$60
+	bcs TryDistortion_A_b
+	cmp #$30
+	bcs TryDistortion_A_c
+	
+	:6 lsr @
+	adc #12
+	jmp TryDistortion_A_d
+	
+TryDistortion_A_a:
+	:3 lsr @
+	jmp TryDistortion_A_d
+	
+TryDistortion_A_b:
+	:4 lsr @
+	adc #9
+	jmp TryDistortion_A_d
+	
+TryDistortion_A_c:
+	:5 lsr @
+	adc #11
+	jmp TryDistortion_A_d
+
+TryDistortion_A_d:
+	tay
+	pla
+	asl @
+	cmp ZPVOL.Buffer,y
+	smi:sta ZPVOL.Buffer,y
+	jmp begindraw_c
+	
+TryDistortion_C:
+	pla
+	jmp begindraw_c
+*/	
+
+
+	
+/*
+;* There was an attempt
+;* This is all over the place, absolutely not good
+
+begindraw_b
+	lda SDWPOK0-0,x
+	and #$0F
+	beq begindraw_c
+	pha
+
+;* TEST
+;*
+;* We're hopefully having a Buzzy C Frequency that could be scaled to the display more accurately!
+
+	lda SDWPOK0-0,x
+	and #$F0
+	cmp #$C0
+	beq test_thing_C
+	cmp #$A0
+	bne test_thing_1
+
+test_thing_A:
+	lda SDWPOK0-1,x
+	eor #$FF
+	
+	cmp #$80
+	bcs test_thing_B
+	
+	:4 lsr @
+;	adc #11
+
+	jmp test_thing_2
+	
+test_thing_B:
+;	:5 lsr @
+;	adc #2
+	
+	:3 lsr @
+	sbc #9
+
+	jmp test_thing_2
+	
+test_thing_C:
+	lda SDWPOK0-1,x
+	sta ZPLZS.TMP2
+	inc ZPLZS.TMP2
+	lda ZPLZS.TMP2
+	jsr Mod3
+	bne test_thing_0
+	lda ZPLZS.TMP2
+	jsr Mod5
+	beq test_thing_0
+	lda SDWPOK0-1,x
+	eor #$FF
+	:4 lsr @
+;	clc
+	adc #6
+	jmp test_thing_2
+	
+test_thing_0:
+	lda SDWPOK0-1,x
+	sta ZPLZS.TMP2
+	inc ZPLZS.TMP2
+	lda ZPLZS.TMP2
+	jsr Mod3
+	beq test_thing_1
+	lda ZPLZS.TMP2
+	jsr Mod5
+	beq test_thing_1
+	lda SDWPOK0-1,x
+	eor #$FF
+	:4 lsr @
+	jmp test_thing_2
+	
+test_thing_1:
+;*
+;* /TEST
+	
+	lda SDWPOK0-1,x
+	eor #$FF
+	:3 lsr @
+	
+test_thing_2:
+
+	tay
+	pla
+	asl @
+	cmp ZPVOL.Buffer,y
+	smi:sta ZPVOL.Buffer,y
+	
+begindraw_c
+*/
+
+
+	
 begindraw_d
 	:2 dex
-	bpl begindraw_b
+	jpl begindraw_b
 	
+;* NTSC Timing tweak, Skip Volume Decay once every 5th Frames to more closely match the PAL Decay Rate
+;* FIXME: This is not actually needed if the function is called after updating the Timer and Progress Bar display...
+
 drawloop
-;	lda ZPLZS.GlobalTimer
-;	and #%00000001
-;	beq drawloop_done
+	lda ZPLZS.TimerOffset
+	cmp #1
+	beq drawloop_done
 
 drawloop_a
 	ldx #31
@@ -1554,7 +1729,7 @@ set_progress_bar
 	sta bar_counter+0
 	
 set_progress_bar_done
-	rts
+	rts					; TODO(?): Merge both Set and Draw into a single Function
 	
 ;-----------------
 
@@ -1793,6 +1968,68 @@ Aux:
 	.byte $00,$00,$00,$00
 Ext:
 	.byte $00,$00,$00,$00
+.endp
+
+;-----------------
+
+;* Generic Modulo calculation using the value stored in TMP2 for the Modulus
+
+.proc Modulo
+	sec
+Loop:	sbc ZPLZS.TMP2
+	bcs Loop
+	adc ZPLZS.TMP2
+Done:	rts
+.endp
+
+.proc Mod3
+	sec
+Loop:	sbc #3
+	bcs Loop
+	adc #3
+Done:	rts
+.endp
+
+.proc Mod5
+	sec
+Loop:	sbc #5
+	bcs Loop
+	adc #5
+Done:	rts
+.endp
+
+.proc Mod7
+	sec
+Loop:	sbc #7
+	bcs Loop
+	adc #7
+Done:	rts
+.endp
+
+;* Faster than calculating both Mod3 and Mod5 if (Mod3 == 0 && Mod5 == 0) is specifically the desired outcome from both
+
+.proc Mod15
+	sec
+Loop:	sbc #15
+	bcs Loop
+	adc #15
+Done:	rts
+.endp
+
+.proc Mod31
+	sec
+Loop:	sbc #31
+	bcs Loop
+	adc #31
+Done:	rts
+.endp
+
+.proc Mod73
+	sec
+Loop:	sbc #73
+	bcs Loop
+	adc #73
+Done:	rts
 .endp
 
 ;-----------------

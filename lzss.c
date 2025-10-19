@@ -35,6 +35,7 @@ void set_binary(void)
 #define bits_match (1 + bits_moff + bits_mlen)		// Bits for encoding a match
 #define max_mlen (min_mlen + (1<<bits_mlen) -1)		// Maximum match length
 #define max_off (1<<bits_moff)				// Maximum offset
+#define channel_count (2*9)				// 4 AUDC, 4 AUDF, 1 AUDCTL, double this number for Stereo
 
 ///////////////////////////////////////////////////////
 // Global Variables
@@ -43,14 +44,15 @@ static int bits_mlen = 4;				// Number of bits used for MATCH
 static int min_mlen = 2;				// Minimum match length
 static int fmt_literal_first = 0;			// Always include first literal in the output
 static int fmt_pos_start_zero = 0;			// Match positions start at 0, else start at max
-static int channel_count = 2*9;				// 4 AUDC, 4 AUDF, 1 AUDCTL, double this number for Stereo
 static int do_trim = 0;
 static int show_stats = 1;
 static int bits_mtotal = 8;	//bits_moff + bits_mlen;// Total Match Bits
 static int bits_set = 0;				// Bits set(?)
 static int force_last_literal = 1;			// Force last Byte to be a Literal
 static int format_version = 0;				// LZSS format version - 0 means last version
-static int stereo = 0;					// 0 -> Mono, 1 -> Stereo
+static int is_stereo = 0;				// 0 -> Mono, 1 -> Stereo
+static int is_ntsc = 0;					// 0 -> PAL, 1 -> NTSC
+static int playspeed = 1;				// Playback Speed, from 1 to 8 xVBI
 static int no_optimisation = 0;				// 1 -> Don't use SAPR Optimisations
 static int *stat_len = NULL;
 static int *stat_off = NULL;
@@ -458,6 +460,7 @@ int sap_trim(uint8_t *data[9], int sz, const char *name)
 }
 
 //////////////////////////////////////////////////////
+// POKEY Optimisations used before LZSS Compression
 typedef enum SAPR_OPTIMISATIONS
 {
 	SAPR_OPTIMISATIONS_NONE = 0,
@@ -605,6 +608,8 @@ void Optimise_POKEY(uint8_t* buf, SAPR_OPTIMISATIONS optimisations)
 }
 
 ///////////////////////////////////////////////////////
+// Re-written parts from the original code written by DMSC
+// Edited by VinsCool
 uint load_file(uint8_t** buffer, const char* filename)
 {
 	FILE* input_file = stdin;
@@ -638,12 +643,12 @@ uint load_file(uint8_t** buffer, const char* filename)
 		fclose(input_file);
 	
 	// Skip the SAP Header, then apply relevant parameters if they are also specified
-	if(strstr((const char*)*buffer, "SAP") != NULL)
+	// Tags that aren't needed or useful for SAP-R Playback will be silently ignored
+	if(strstr((const char*)*buffer, "SAP\r\n") != NULL)
 	{
-		//fprintf(stderr, "%s\n", *buffer);
+		//fprintf(stderr,"LZSS: Skipping SAP Header\n");
 		
-		fprintf(stderr,"LZSS: Skipping SAP Header\n");
-		
+		// Find the Header end point, from which data will be offset from
 		for(int i = 0; i < input_size; i++)
 		{
 			if(strstr((const char*)*buffer + i, "\n\r") != NULL)
@@ -654,23 +659,106 @@ uint load_file(uint8_t** buffer, const char* filename)
 			break;
 		}
 		
+		fprintf(stderr,"LZSS: Skipping SAP Header, offset by %u bytes\n", offset);
+		
+		// Display the entire SAP Header in debug log, leave this line commented out otherwise
 		//fprintf(stderr, "%s\n", (*buffer + 3));
 		
-		if(strstr((const char*)*buffer, "STEREO") != NULL)
+		if(strstr((const char*)*buffer, "TYPE R\r\n") != NULL)
 		{
-			fprintf(stderr,"LZSS: Stereo Mode detected\n");
-			stereo = 1;
+			//fprintf(stderr,"LZSS: SAP Type R detected\n");
+		}
+			
+		else
+		{
+			fprintf(stderr, "LZSS: Invalid or Unknown SAP Type\n");
+			goto FileIsInvalid;
+		}
+			
+		if(strstr((const char*)*buffer, "STEREO\r\n") != NULL)
+		{
+			fprintf(stderr,"LZSS: Stereo Playback detected\n");
+			is_stereo = 1;
 		}
 		
-		//fprintf(stderr, "LZSS: SAPR data offset by %d bytes\n", (int)offset);
+		else
+		{
+			fprintf(stderr,"LZSS: Mono Playback detected\n");
+			is_stereo = 0;
+		}
+		
+		if(strstr((const char*)*buffer, "NTSC\r\n") != NULL)
+		{
+			fprintf(stderr,"LZSS: NTSC Playback detected\n");
+			is_ntsc = 1;
+		}
+		
+		else
+		{
+			fprintf(stderr,"LZSS: PAL Playback detected\n");
+			is_ntsc = 0;
+		}
+		
+		if(strstr((const char*)*buffer, "FASTPLAY ") != NULL)
+		{
+			int PalSpeed[8] = {312, 156, 104, 78, 62, 52, 45, 39};
+			int NtscSpeed[8] = {262, 131, 87, 66, 52, 44, 37, 33};
+			int fuck = 0;
+			int found = 0;
+			
+			for(int i = 0; i < input_size; i++)
+			{
+				if(strstr((const char*)*buffer + i, "FASTPLAY ") != NULL)
+					continue;
+				
+				fuck = i + 7;
+				break;
+			}
+			
+			int fastplay = atoi((const char*)*buffer + fuck);
+			
+			//fprintf(stderr,"LZSS: Fastplay = %d\n", fastplay);
+			
+			// Find the nearest Fastplay value used by Playback Speed
+			for (int i = 0; i < 8; i++)
+			{
+				if (fastplay == (is_ntsc ? NtscSpeed[i] : PalSpeed[i]))
+				{
+					playspeed = i + 1;
+					found = 1;
+					break;
+				}
+			}
+			
+			if (found)
+				fprintf(stderr,"LZSS: Playback Speed of %d detected\n", playspeed);
+			
+			else
+				// TODO: Add code to approach Nearest value instead
+				goto SetDefaultSpeed;
+				
+		}
+		
+		else
+		{
+SetDefaultSpeed:
+			fprintf(stderr,"LZSS: Playback Speed unknown, Speed 1 will be used by default\n");
+			playspeed = 1;
+		}
+		
+		//fprintf(stderr, "LZSS: SAPR data offset by %u bytes\n", offset);
 	}
 	
-	// Set actual channel count
-	channel_count = stereo ? 2*9 : 1*9;
+	else
+	{
+		fprintf(stderr, "LZSS: SAP Header could not be identified\n");
+		
+FileIsInvalid:
+		cmd_error("Invalid Input File Format!");
+	}
 	
 	// Move data back to the start of the Buffer using the SAP Header offset
-	if (offset > 0)
-		memcpy(*buffer, *buffer + offset, input_size - offset);
+	memcpy(*buffer, *buffer + offset, input_size - offset);
 	
 	return input_size - offset;
 }
@@ -712,34 +800,41 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 	int sz = 0;
 	int end_not_ok = 1;
 	
+	// Stereo hack, and yes, it's all over the place, but who cares really?
+	int real_count = (channel_count / (is_stereo ? 1 : 2));
+	
 	// Alloc statistic arrays
 	stat_len = calloc(sizeof(int), max_mlen + 1);
 	stat_off = calloc(sizeof(int), max_off + 1);
 	
 	// Max size of each bufer: 256k
-	for(int i = 0; i < channel_count; i++)
+	for(int i = 0; i < real_count; i++)
 	{
-		data[i] = malloc(256*1024);
+		//data[i] = malloc(256*1024);
+		data[i] = calloc(sizeof(uint8_t), 256*1024);
 		last_pos[i] = -1;
 	}
+	
+	// Initialise Buffers with 0
+	memset(&buf, 0, sizeof(uint8_t) * real_count);
 	
 	// Buffered bytes are loaded from source memory pointer
 	// SAP-R frames are processed in groups of 9 bytes, in this order: 
 	// AUDF0, AUDC0, AUDF1, AUDC1, AUDF2, AUDC2, AUDF3, AUDC3, AUDCTL
 	while(sz < (256*1024))
 	{
-		int offset = sz * channel_count;
+		int offset = sz * real_count;
 		
 		// Maxed Input File Size, done
-		if (offset >= input_size)
+		if(offset >= input_size)
 			break;
 		
-		memcpy(buf, &input_buffer[offset], channel_count);
+		memcpy(buf, &input_buffer[offset], real_count);
 		Optimise_POKEY(buf, optimisations);
 		Optimise_POKEY(buf + 9, optimisations);
 		
 		// Write the processed bytes once the optimisations were applied to them
-		for (int i = 0; i < channel_count; i++)
+		for (int i = 0; i < real_count; i++)
 			data[i][sz] = buf[i];
 		
 		sz++;
@@ -755,17 +850,18 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 	// Check for empty streams and warn
 	init(&b);
 	
-	for(int i=channel_count-1; i>=0; i--)
+	for(int i = real_count - 1; i >= 0; i--)
 	{
 		const uint8_t *p = data[i], s = *p;
 		int n = 0;
-		for(int j=0; j<sz; j++)
-			if( *p++ != s )
+		
+		for(int j = 0; j < sz; j++)
+			if(*p++ != s)
 				n++;
 		
-		if (!n)
+		if(!n)
 		{
-			if (show_stats >=1 && !is_silent)
+			if(show_stats >=1 && !is_silent)
 				fprintf(stderr,"Skipping channel #%d, set with $%02x.\n", i, s);
 			
 			add_bit(&b, 1);
@@ -776,43 +872,30 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 		{
 			add_bit(&b, 0);
 			chn_skip[i] = 0;
-			
-			if(!n && !is_silent)
-			{
-				fprintf(stderr,"WARNING: stream #%d ", i);
-				
-				if( s == 0 )
-					fprintf(stderr,"is empty");
-				else
-					fprintf(stderr,"contains only $%02X", s);
-				
-				fprintf(stderr, ", should not be included in output!\n");
-			}
 		}
 	}
 	
 	// Hack: add as many bits as Stereo, due to using the same routine for decoding channels
-	// FIXME: Discard this hack and just assume 18 Channels are always used
-	if (!stereo)
-		for(int i=0; i<channel_count; i++)
+	if(!is_stereo)
+		for(int i = 0; i < real_count; i++)
 			add_bit(&b, 0);
 	
 	bflush(&b);
 	
-	// Now, we store initial values for all chanels:
-	for(int i=channel_count-1; i>=0; i--)
+	// Now, we store initial values for all Channels
+	for(int i = real_count - 1; i >= 0; i--)
 	{
 		// In version 1 we only store init byte for the skipped channels
-		if( fmt_literal_first || chn_skip[i] )
+		if(fmt_literal_first || chn_skip[i])
 			add_byte(&b, *data[i]);
 	}
 	
 	bflush(&b);
 
 	// Init LZ states
-	for(int i=0; i<channel_count; i++)
+	for(int i = 0; i < real_count; i++)
 	{
-		if( !chn_skip[i] )
+		if(!chn_skip[i])
 		{
 			lzop_init(&lz[i], data[i], sz);
 			lzop_backfill(&lz[i], 0);
@@ -820,14 +903,14 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 	}
 	
 	// Detect if at least one of the streams end in a match:
-	for(int i=0; i<channel_count; i++)
-		if( !chn_skip[i] )
+	for(int i = 0; i < real_count; i++)
+		if(!chn_skip[i])
 			end_not_ok &= lzop_last_is_match(&lz[i]);
 
 	// If all streams end in a Match, we need to fix at least one of them to end in a Literal
 	if(force_last_literal && end_not_ok)
 	{
-		for(int i = 0; i < channel_count; i++)
+		for(int i = 0; i < real_count; i++)
 		{
 			// Only for Channels that aren't skipped
 			if(!chn_skip[i])
@@ -836,9 +919,9 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 				lzop_backfill(&lz[i], 1);
 				
 				// Backfill was successful
-				if (!lzop_last_is_match(&lz[i]))
+				if(!lzop_last_is_match(&lz[i]))
 				{
-					if (!is_silent)
+					if(!is_silent)
 						fprintf(stderr,"LZSS: fixing up stream #%d to end in a literal\n", i);
 					
 					end_not_ok = 0;
@@ -857,7 +940,7 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 
 	// Compress
 	for(int pos = fmt_literal_first ? 1 : 0; pos < sz; pos++)
-		for(int i = channel_count - 1; i >= 0; i--)
+		for(int i = real_count - 1; i >= 0; i--)
 			if(!chn_skip[i])
 				last_pos[i] = lzop_encode(&b, &lz[i], pos, last_pos[i], i);
 	
@@ -870,13 +953,13 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 	
 	if (!is_silent)
 		fprintf(stderr,"LZSS: Ratio = %5d / %d = %5.2f%%\n",
-			b.total, channel_count*sz, (100.0*b.total) / (((float)channel_count)*sz));
+			b.total, real_count*sz, (100.0*b.total) / (((float)real_count)*sz));
 	
 	if(show_stats >= 1 && !is_silent)
 	{
 		int total = 8;
 		
-		for(int i=0; i<channel_count; i++)
+		for(int i = 0; i < real_count; i++)
 		{
 			int ssize = 8;
 			
@@ -890,14 +973,14 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 		}
 		
 		fprintf(stderr,"Total:\t\t%6d bits,\t\t%5.2f%%,\t\t%5.2f%% of output\n",
-			total, (100.0*total) / (8.0*channel_count*sz), (100.0*total)/(8.0*b.total));
+			total, (100.0*total) / (8.0*real_count*sz), (100.0*total)/(8.0*b.total));
 	}
 
 	if(show_stats == 2 && !is_silent)
 	{
 		fprintf(stderr,"\nvalue\tPOS\tLEN\n");
 		
-		for(int i=0; i<=max(max_mlen,max_off); i++)
+		for(int i = 0; i <= max(max_mlen, max_off); i++)
 		{
 			fprintf(stderr,"%2d\t%5d\t%5d\n", i,
 				(i <= max_off) ? stat_off[i] : 0, (i <= max_mlen) ? stat_len[i] : 0);
@@ -905,7 +988,7 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 	}
 
 	// Free memory
-	for(int i = 0; i < channel_count; i++)
+	for(int i = 0; i < real_count; i++)
 	{
 		free(data[i]);
 		
@@ -1009,7 +1092,7 @@ int main(int argc, char **argv)
 				format_version = 1;
 				break;
 			case 's':
-				stereo = 1;
+				is_stereo = 1;
 				break;
 			case 'n':
 				no_optimisation = 1;
@@ -1111,6 +1194,11 @@ int main(int argc, char **argv)
 	
 	else
 		output_size = bruteforce_optimisations(input_buffer, input_size, output_buffer);
+	
+	// Write the known SAP Header Parameters into the 5 highest Bits of the 3rd Byte of the Output Buffer
+	output_buffer[2] |= is_stereo ? 0b10000000 : 0b00000000;
+	output_buffer[2] |= is_ntsc ? 0b01000000 : 0b00000000;
+	output_buffer[2] |= ((playspeed - 1) & 0b00000111) << 3;
 	
 	// Save Output File
 	save_file(output_buffer, output_size, output_name);
