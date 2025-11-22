@@ -7,6 +7,8 @@
 
 ;//---------------------------------------------------------------------------------------------
 
+.def IGNORE_WARNINGS = 0		; 0 -> Stop Assembly on Errors and Warnings, 1 -> Stop Assembly on Errors, Ignore Warnings
+
 .def INVALID = -1
 .def TRUE = 1
 .def FALSE = 0

@@ -165,6 +165,7 @@ SetNewSongPtrs_a:
 	bmi SetNewSongPtrs		; Bit 7 set -> Infinitely looping, resume playback from the Loop Point
 	lda ZPLZS.LoopCount		; How many times the End of a Sequence was reached so far?
 	cmp #2				; Has it been looping at least once?
+;	cmp #1				;* Edited for Emkay's Greatest POKEY Hits, Vol 1 to force a Fadeout after only 1 Loop!
 	bcc SetNewSongPtrs		; If not, resume playback from the Loop Point
 	jsr trigger_fade_immediate	; Initialise fadeout sequence for the remainder of playback time
 	bmi SetNewSongPtrs		; Guaranteed to return with the Negative Flag set
@@ -424,6 +425,9 @@ CheckForTwoToneBitLeft:
 	tya
 	eor #$10
 	sta SDWPOK0.POKC0
+;	tya
+;	and #$0F
+;	seq:ldx #$8B			; Volume 0 -> No Two-Tone
 	ldx #$8B
 	
 CheckForTwoToneBitLeft_a:
@@ -442,6 +446,9 @@ CheckForTwoToneBitRight:
 	tya
 	eor #$10
 	sta SDWPOK1.POKC0
+;	tya
+;	and #$0F
+;	seq:ldx #$8B			; Volume 0 -> No Two-Tone
 	ldx #$8B
 	
 CheckForTwoToneBitRight_a:
@@ -612,7 +619,7 @@ DetectStereoModeDone:
 	sta ZPLZS.VolumeLevel+5
 	sta ZPLZS.VolumeLevel+6
 	sta ZPLZS.VolumeLevel+7
-	sta ZPLZS.VolumeMask
+;	sta ZPLZS.VolumeMask
 	lda ZPLZS.MachineStereo
 	beq SetStereoModeDone
 	cmp ZPLZS.SongStereo

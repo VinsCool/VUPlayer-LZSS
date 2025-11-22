@@ -6,6 +6,18 @@
 # The LZSS Program to be called must be located inside of the same Folder from which this Script is going to be executed
 # Also, this Script will only search for SAPR Files located inside of Folders relative to the Script File itself, specifically
 # This was done on purpose to avoid clutter, however it should be trivial to edit the Script to make it point elsewhere, if needed
+# 
+# Usage: './bulk.sh path arg1 arg2 arg3 arg4'
+# 
+# By default, the Script will only search for Files inside all Subfolders, but not inside the current Folder
+# Path may be set to './', to limit the search inside all Subfolders, but exclude the current Folder
+# Path may be set to '../' to limit the search inside the current Folder, but exclude all Subfolders, essentially the reverse idea
+# Path may also be set to a given Subfolder name to limit the amount of data to process all at once from multiple Folders
+# 
+# Optionally, up to 4 additional Arguments may be passed from the Command Line, for more details, run './lzss -h'
+# If the additional Arguments aren't needed, they could instead be omitted from the Command Line
+# 
+# If this makes absolutely no sense, just run './build.sh' and see what happens next, I guess...
 
 # Script Variables used for 'Successful File Count', 'Current File Index', and 'Total File Count', in this order
 count=0
@@ -15,9 +27,23 @@ total=0
 # Started!
 echo -e "> Searching for SAP Type R files..."
 
+# Check for the First Argument to ensure it is not set to use an empty Path in order to be able use this Script properly
+# This is also the Default Case for running this Script, to hopefully make things easier to understand for anyone without context
+# If this is not Noob Friendly enough, then what the fuck are you doing here, seriously?
+# RTFM, and don't even bother trying to contact me and waste my time for basic Command Line help
+# If you can't figure it out all by yourself, well, this thing is not made for you, sorry
+if [ "$1" == '' ];
+then
+	echo -e "> Error: No Path was specified!"
+	./lzss -h
+	echo -e "> Try running '"$0" ./' to get started"
+	echo -e "> For more details, open '"$0"' in a text editor"
+	exit
+fi
+
 # First Pass, Count how many Files are expected to be processed
-#for i in "$1"**/*.sap*;
-for i in "$1"*RANDOM5/*.sap*;
+# Optionally, the first Argument may be used to specify a Path to scan if more than 1 Folder is present and/or too many files are found
+for i in "$1"*/*.sap*;
 do
 	if [ -e "$i" ];
 	then
@@ -39,8 +65,7 @@ else
 fi
 
 # Second Pass, Attempt to Process all of the Files that were found in First Pass, and Count how many of them returned without error
-#for i in "$1"**/*.sap*;
-for i in "$1"*RANDOM5/*.sap*;
+for i in "$1"*/*.sap*;
 do
 	if [ -e "$i" ];
 	then
@@ -50,7 +75,7 @@ do
 		echo -e ""
 		echo -e "> Loaded '""$i""'"
 		o="${i%.*}.lzss"
-		./lzss -6 -q "$i" "$o"
+		./lzss -6 -q "$i" "$o" "$2" "$3" "$4" "$5"
 		if [ $? -ne 0 ];
 		then
 			echo -e "> No data was saved!"

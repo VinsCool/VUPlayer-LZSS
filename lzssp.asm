@@ -20,6 +20,11 @@ LZDATAEND
 	
 	.echo "> LZDATA size of ", LZDATAEND - LZDATA, ", from ", LZDATA, " to ", LZDATAEND
 	
+	.if (LZDATAEND >= $C000)
+		.echo "> WARNING: Data beyond $C000 will be corrupted!"
+		.error (!IGNORE_WARNINGS)
+	.endif
+	
 ;-----------------
 
 .elseif (OPTION == 2)		;* Relocator

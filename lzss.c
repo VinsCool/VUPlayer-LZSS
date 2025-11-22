@@ -52,6 +52,8 @@ static int force_last_literal = 1;			// Force last Byte to be a Literal
 static int format_version = 0;				// LZSS format version - 0 means last version
 static int is_stereo = 0;				// 0 -> Mono, 1 -> Stereo
 static int is_ntsc = 0;					// 0 -> PAL, 1 -> NTSC
+static int force_cross_region = 0;			// 1 -> Force Cross Region conversion, either PAL->NTSC or NTSC->PAL
+static int cross_region_offset = 0;
 static int playspeed = 1;				// Playback Speed, from 1 to 8 xVBI
 static int no_optimisation = 0;				// 1 -> Don't use SAPR Optimisations
 static int *stat_len = NULL;
@@ -798,6 +800,7 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 	int chn_skip[channel_count];
 	int last_pos[channel_count];
 	int sz = 0;
+	int ptr = 0;
 	int end_not_ok = 1;
 	
 	// Stereo hack, and yes, it's all over the place, but who cares really?
@@ -822,8 +825,13 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 	// SAP-R frames are processed in groups of 9 bytes, in this order: 
 	// AUDF0, AUDC0, AUDF1, AUDC1, AUDF2, AUDC2, AUDF3, AUDC3, AUDCTL
 	while(sz < (256*1024))
-	{
-		int offset = sz * real_count;
+	{	
+		if (force_cross_region && is_ntsc && ((ptr % 6) == (cross_region_offset % 6)))
+		{
+			ptr++;
+		}
+		
+		int offset = ptr * real_count;
 		
 		// Maxed Input File Size, done
 		if(offset >= input_size)
@@ -838,7 +846,18 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 			data[i][sz] = buf[i];
 		
 		sz++;
+		ptr++;
+		
+		if (force_cross_region && !is_ntsc && ((ptr % 5) == (cross_region_offset % 5)))
+		{
+			for (int i = 0; i < real_count; i++)
+				data[i][sz] = buf[i];
+			
+			sz++;		
+		}
 	}
+	
+	//fprintf(stderr,"sz == %d, ptr == %d\n", sz, ptr);
 	
 	// Perform trimming of the data
 	if(do_trim)
@@ -862,7 +881,7 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 		if(!n)
 		{
 			if(show_stats >=1 && !is_silent)
-				fprintf(stderr,"Skipping channel #%d, set with $%02x.\n", i, s);
+				fprintf(stderr,"LZSS: Skipping channel #%d, set with $%02x.\n", i, s);
 			
 			add_bit(&b, 1);
 			chn_skip[i] = 1;
@@ -922,7 +941,7 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 				if(!lzop_last_is_match(&lz[i]))
 				{
 					if(!is_silent)
-						fprintf(stderr,"LZSS: fixing up stream #%d to end in a literal\n", i);
+						fprintf(stderr,"LZSS: Fixing up stream #%d to end in a literal\n", i);
 					
 					end_not_ok = 0;
 					break;
@@ -934,8 +953,8 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 	// Something might have gone wrong, display a warning message just in case
 	if(end_not_ok && !is_silent)
 	{
-		fprintf(stderr,"WARNING: stream does not end in a literal.\n");
-		fprintf(stderr,"WARNING: this can produce errors at the end of decoding.\n");
+		fprintf(stderr,"WARNING: Stream does not end in a literal.\n");
+		fprintf(stderr,"WARNING: This can produce errors at the end of decoding.\n");
 	}
 
 	// Compress
@@ -948,12 +967,18 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 	
 	// Show stats
 	if (!is_silent)
+	{
 		fprintf(stderr,"LZSS: Max Offset = %d, Max Length = %d, Match Bits = %d\n",
 			max_off, max_mlen, bits_match - 1);
-	
-	if (!is_silent)
+		
 		fprintf(stderr,"LZSS: Ratio = %5d / %d = %5.2f%%\n",
 			b.total, real_count*sz, (100.0*b.total) / (((float)real_count)*sz));
+		
+		fprintf(stderr,"LZSS: Playback Time = %d Frames = %01d:%02d.%02d\n",
+			(sz / playspeed), (((sz / playspeed) / (is_ntsc ? 60 : 50)) / 60) % 60,
+			((sz / playspeed) / (is_ntsc ? 60 : 50)) % 60,
+			((((sz / playspeed) % (is_ntsc ? 60 : 50)) * 100) / (is_ntsc ? 60 : 50)) % 100);
+	}
 	
 	if(show_stats >= 1 && !is_silent)
 	{
@@ -975,7 +1000,7 @@ uint compress(uint8_t* input_buffer, uint input_size, uint8_t* output_buffer, SA
 		fprintf(stderr,"Total:\t\t%6d bits,\t\t%5.2f%%,\t\t%5.2f%% of output\n",
 			total, (100.0*total) / (8.0*real_count*sz), (100.0*total)/(8.0*b.total));
 	}
-
+	
 	if(show_stats == 2 && !is_silent)
 	{
 		fprintf(stderr,"\nvalue\tPOS\tLEN\n");
@@ -1038,7 +1063,7 @@ int main(int argc, char **argv)
 	int opt;
 	
 	// Parse Command Line Arguments
-	while(-1 != (opt = getopt(argc, argv, "hqvo:l:m:b:826extsn")))
+	while(-1 != (opt = getopt(argc, argv, "hqvo:l:m:b:826extsnfc:")))
 	{
 		switch(opt)
 		{
@@ -1096,6 +1121,12 @@ int main(int argc, char **argv)
 				break;
 			case 'n':
 				no_optimisation = 1;
+				break;
+			case 'f':
+				force_cross_region = 1;
+				break;
+			case 'c':
+				cross_region_offset = atoi(optarg);
 				break;
 			case 'h':
 			default:
@@ -1176,8 +1207,9 @@ int main(int argc, char **argv)
 	if(min_mlen < 1 || min_mlen > 16)
 		cmd_error("minimum match length should be from 1 to 16");
 	
-	if(optind < argc - 2)
-		cmd_error("too many arguments: one input file and one output file expected");
+	// Ignore all empty/invalid arguments instead of throwing an error when the Bash Script is used with no extra arguments
+	//if(optind < argc - 2)
+	//	cmd_error("too many arguments: one input file and one output file expected");
 	
 	if(optind < argc)
 		input_name = argv[optind];
@@ -1199,6 +1231,7 @@ int main(int argc, char **argv)
 	output_buffer[2] |= is_stereo ? 0b10000000 : 0b00000000;
 	output_buffer[2] |= is_ntsc ? 0b01000000 : 0b00000000;
 	output_buffer[2] |= ((playspeed - 1) & 0b00000111) << 3;
+	output_buffer[2] ^= force_cross_region ? 0b01000000 : 0b00000000;
 	
 	// Save Output File
 	save_file(output_buffer, output_size, output_name);
